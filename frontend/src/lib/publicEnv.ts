@@ -56,12 +56,12 @@ export function getProductionSupabaseConfigIssues(): string[] {
   const lines: string[] = [];
   if (!getSupabaseUrl()) {
     lines.push(
-      "VITE_SUPABASE_URL is empty — add under Vercel → Environment Variables, redeploy, or ensure /api/public-config returns it.",
+      "VITE_SUPABASE_URL is empty — set Vercel env + redeploy, or set frontend/public/noexcuses-bootstrap.json renderApiOrigin and deploy Render with GET /api/public/browser-config.",
     );
   }
   if (!getSupabaseAnonKey()) {
     lines.push(
-      "VITE_SUPABASE_ANON_KEY is empty — same as Supabase publishable key; redeploy or use /api/public-config.",
+      "VITE_SUPABASE_ANON_KEY is empty — same as Supabase publishable key; redeploy or use Render browser-config bootstrap.",
     );
   }
   return lines;

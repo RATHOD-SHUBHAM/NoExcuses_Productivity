@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from noexcuses_backend.config import get_settings, is_elevated_supabase_key
@@ -42,6 +42,24 @@ def public_config_check() -> dict[str, str]:
     s = get_settings()
     host = urlparse(s.supabase_url).hostname or ""
     return {"supabase_host": host.lower()}
+
+
+@app.get("/api/public/browser-config")
+def public_browser_config() -> dict[str, str]:
+    """
+    No auth. Lets the SPA on Vercel load Supabase URL + publishable key when Vite did not bake VITE_*.
+    Same values as SUPABASE_URL / SUPABASE_KEY on this API host (must be anon/publishable, never service_role).
+    """
+    s = get_settings()
+    if is_elevated_supabase_key(s.supabase_key):
+        raise HTTPException(
+            status_code=503,
+            detail="Server misconfiguration: SUPABASE_KEY must be anon/publishable for browser bootstrap.",
+        )
+    return {
+        "supabase_url": s.supabase_url.rstrip("/"),
+        "supabase_anon_key": s.supabase_key.strip(),
+    }
 
 
 @app.get("/")
