@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -34,12 +35,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   sessionRef.current = session;
   const accessTokenRef = useRef<string | null>(null);
   accessTokenRef.current = effectiveAccessToken(session);
-  // During render (not useEffect): child effects run before parent effects, so the API
-  // layer must see the token before HomePage’s first fetch.
-  bindApiSessionRef(sessionRef);
-  bindApiAccessTokenRef(accessTokenRef);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    bindApiSessionRef(sessionRef);
+    bindApiAccessTokenRef(accessTokenRef);
     return () => clearApiSessionRef();
   }, []);
 
@@ -51,10 +50,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
+    const loadingDeadline = window.setTimeout(() => {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    }, 5000);
 
-    // Bootstrap outside onAuthStateChange: only INITIAL_SESSION used loading=false before
-    // could strand the app on "Loading…" forever if that event never completed. getSession
-    // runs outside the auth lock so normalizeStoredSession (refresh/signOut) cannot deadlock.
+    const clearDeadline = () => {
+      window.clearTimeout(loadingDeadline);
+    };
+
+    // getSession can return null before storage finishes hydrating; INITIAL_SESSION (below)
+    // applies the real session. Do not ignore INITIAL_SESSION.
     void sb.auth
       .getSession()
       .then(async ({ data, error }) => {
@@ -68,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       })
       .finally(() => {
+        clearDeadline();
         if (!cancelled) setLoading(false);
       });
 
@@ -75,6 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
 
       if (event === "INITIAL_SESSION") {
+        queueMicrotask(() => {
+          void normalizeStoredSession(sb, next).then((s) => {
+            if (!cancelled) setSession(s);
+          });
+        });
         return;
       }
 
@@ -102,14 +115,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      clearDeadline();
       sub.subscription.unsubscribe();
     };
   }, []);
 
   const signOut = useCallback(async () => {
+    setSession(null);
     const sb = getSupabase();
-    if (sb) {
+    if (!sb) return;
+    try {
       await sb.auth.signOut();
+    } catch {
+      /* still signed out locally */
     }
   }, []);
 
