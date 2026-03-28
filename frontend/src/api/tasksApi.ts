@@ -26,10 +26,36 @@ async function parseError(res: Response): Promise<string> {
 async function authHeaders(): Promise<Record<string, string>> {
   const sb = getSupabase();
   if (!sb) return {};
-  const { data } = await sb.auth.getSession();
-  const token = data.session?.access_token;
+  let session = (await sb.auth.getSession()).data.session;
+  if (!session?.access_token) {
+    const { data, error } = await sb.auth.refreshSession();
+    if (!error) {
+      session = data.session ?? session;
+    }
+  }
+  const token = session?.access_token;
   if (!token) return {};
   return { Authorization: `Bearer ${token}` };
+}
+
+async function throwIfNotOk(res: Response): Promise<void> {
+  if (res.ok) {
+    return;
+  }
+  if (res.status === 401) {
+    const sb = getSupabase();
+    if (sb) {
+      await sb.auth.signOut();
+    }
+    if (
+      typeof window !== "undefined" &&
+      !window.location.pathname.startsWith("/login")
+    ) {
+      window.location.assign("/login");
+    }
+    throw new Error("Session expired. Sign in again.");
+  }
+  throw new Error(await parseError(res));
 }
 
 async function requestJson<T>(
@@ -63,9 +89,7 @@ async function requestJson<T>(
     }
     throw e;
   }
-  if (!res.ok) {
-    throw new Error(await parseError(res));
-  }
+  await throwIfNotOk(res);
   if (res.status === 204) {
     return undefined as T;
   }
@@ -273,9 +297,7 @@ async function downloadFromApi(path: string, filename: string): Promise<void> {
     }
     throw e;
   }
-  if (!res.ok) {
-    throw new Error(await parseError(res));
-  }
+  await throwIfNotOk(res);
   const blob = await res.blob();
   triggerDownload(blob, filename);
 }
