@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import {
+  BrowserRouter,
   Navigate,
   Outlet,
-  RouterProvider,
-  createBrowserRouter,
+  Route,
+  Routes,
   useNavigate,
 } from "react-router-dom";
 import { ApiConfigBanner } from "./components/ApiConfigBanner";
@@ -18,11 +19,6 @@ import { HomePage } from "./pages/HomePage";
 import { LegacyTaskRedirect } from "./pages/LegacyTaskRedirect";
 import { AuthPage } from "./pages/AuthPage";
 import { TaskDetailPage } from "./pages/TaskDetailPage";
-
-/** Renders child routes only — required so `/login` and the protected tree are siblings under `/` (RR7). */
-function RootLayout() {
-  return <Outlet />;
-}
 
 function ProtectedLayout() {
   const navigate = useNavigate();
@@ -104,31 +100,22 @@ function ProtectedLayout() {
 }
 
 /**
- * RR7: top-level `path: "/login"` next to `path: "/"` can fail to match in production builds.
- * Nest `login` + protected app as children of `path: "/"` + `<Outlet/>` so `/login` always resolves.
+ * Declarative `BrowserRouter` + `Routes` — reliable `/login` matching on Vercel (avoids RR7
+ * `createBrowserRouter` “No routes matched location /login” in production).
  */
-const appRouter = createBrowserRouter([
-  {
-    path: "/",
-    element: <RootLayout />,
-    children: [
-      { path: "login", element: <AuthPage /> },
-      {
-        path: "",
-        element: <ProtectedLayout />,
-        children: [
-          { index: true, element: <HomePage /> },
-          { path: "tasks/:task_id", element: <TaskDetailPage /> },
-          { path: "task/:id", element: <LegacyTaskRedirect /> },
-        ],
-      },
-    ],
-  },
-  {
-    path: "*",
-    element: <Navigate to="/" replace />,
-  },
-]);
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/login" element={<AuthPage />} />
+      <Route path="/" element={<ProtectedLayout />}>
+        <Route index element={<HomePage />} />
+        <Route path="tasks/:task_id" element={<TaskDetailPage />} />
+        <Route path="task/:id" element={<LegacyTaskRedirect />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 export default function App() {
   const supabaseIssues = getProductionSupabaseConfigIssues();
@@ -146,9 +133,11 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <ApiConfigBanner />
-      <RouterProvider router={appRouter} />
-      <AuthTraceHud />
+      <BrowserRouter>
+        <ApiConfigBanner />
+        <AppRoutes />
+        <AuthTraceHud />
+      </BrowserRouter>
     </AuthProvider>
   );
 }

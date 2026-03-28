@@ -28,13 +28,22 @@ export function getSupabase(): SupabaseClient | null {
   }
   clientFingerprint = fingerprint;
   if (!client) {
-    client = createClient(url, anon, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-      },
-    });
+    try {
+      client = createClient(url, anon, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      });
+    } catch {
+      console.error(
+        "[NoExcuses] Supabase createClient failed — check URL/key (runtime bootstrap or VITE_*).",
+      );
+      client = null;
+      clientFingerprint = "";
+      return null;
+    }
   }
   return client;
 }
