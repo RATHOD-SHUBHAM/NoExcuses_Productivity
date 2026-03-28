@@ -8,6 +8,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  isAuthenticatedSession,
+  normalizeStoredSession,
+} from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 
 type AuthContextValue = {
@@ -32,9 +36,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     void sb.auth
       .getSession()
-      .then(({ data }) => {
+      .then(({ data }) => normalizeStoredSession(sb, data.session ?? null))
+      .then((s) => {
         if (!cancelled) {
-          setSession(data.session ?? null);
+          setSession(s);
         }
       })
       .catch(() => {
@@ -48,7 +53,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       });
     const { data: sub } = sb.auth.onAuthStateChange((_event, next) => {
-      setSession(next);
+      if (next === null) {
+        setSession(null);
+        return;
+      }
+      if (isAuthenticatedSession(next)) {
+        setSession(next);
+        return;
+      }
+      void normalizeStoredSession(sb, next).then((s) => {
+        if (!cancelled) {
+          setSession(s);
+        }
+      });
     });
     return () => {
       cancelled = true;
