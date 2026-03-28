@@ -26,16 +26,16 @@ from noexcuses_backend.schemas import (
     WeeklyReviewUpsert,
 )
 from noexcuses_backend.services import stats as stats_svc
-from noexcuses_backend.supabase_client import get_supabase, run_query
+from noexcuses_backend.deps import get_supabase_user
+from noexcuses_backend.supabase_client import run_query
 
 router = APIRouter(prefix="/api", tags=["api"])
 _log = logging.getLogger(__name__)
 
 _RLS_HELP = (
-    "Row-level security blocked this write. FastAPI must use an elevated key, not "
-    "sb_publishable_… (publishable). In .env set SUPABASE_SECRET_KEY to the Secret key "
-    "(sb_secret_…) from Project Settings → API Keys, or SUPABASE_SERVICE_ROLE_KEY to the "
-    "legacy service_role JWT (eyJ…) from Legacy API Keys. Restart uvicorn after saving .env."
+    "Row-level security blocked this operation. Ensure the request sends a valid "
+    "Supabase access token (Authorization: Bearer …) and that SUPABASE_KEY on the API is "
+    "the anon/publishable key, not the service_role or secret key."
 )
 
 # Tables (Supabase/Postgres): public.tasks, public.task_logs, rest_days,
@@ -168,7 +168,7 @@ def _stats_window_bounds(created_at: date, as_of: date | None) -> tuple[date, da
 @router.post("/tasks", response_model=TaskOut, status_code=201)
 def create_task(
     body: TaskCreate,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
 ) -> TaskOut:
     # DB sets id + created_at (default now())
     try:
@@ -181,7 +181,7 @@ def create_task(
 
 
 @router.get("/tasks", response_model=list[TaskOut])
-def list_tasks(db: Annotated[Client, Depends(get_supabase)]) -> list[TaskOut]:
+def list_tasks(db: Annotated[Client, Depends(get_supabase_user)]) -> list[TaskOut]:
     res = run_query(lambda: db.table("tasks").select("*").order("created_at", desc=True))
     rows = res.data or []
     return [TaskOut.from_row(r) for r in rows]
@@ -190,7 +190,7 @@ def list_tasks(db: Annotated[Client, Depends(get_supabase)]) -> list[TaskOut]:
 @router.delete("/tasks/{task_id}", status_code=204)
 def delete_task(
     task_id: str,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
 ) -> None:
     exists = run_query(lambda: db.table("tasks").select("id").eq("id", task_id).limit(1))
     if not exists.data:
@@ -204,7 +204,7 @@ def delete_task(
 @router.post("/tasks/{task_id}/complete", response_model=TaskLogOut)
 def mark_completed_for_day(
     task_id: str,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     body: CompleteBody | None = None,
 ) -> TaskLogOut:
     b = body if body is not None else CompleteBody()
@@ -275,7 +275,7 @@ def mark_completed_for_day(
 
 @router.get("/stats/monthly-completions", response_model=list[DailyCompletion])
 def monthly_completions(
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     year: int | None = Query(None, ge=2000, le=2100),
     month: int | None = Query(None, ge=1, le=12),
 ) -> list[DailyCompletion]:
@@ -355,7 +355,7 @@ def monthly_completions(
 @router.get("/tasks/{task_id}/logs", response_model=list[TaskLogOut])
 def task_logs(
     task_id: str,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
 ) -> list[TaskLogOut]:
     task = run_query(lambda: db.table("tasks").select("id").eq("id", task_id).limit(1))
     if not task.data:
@@ -376,7 +376,7 @@ def task_logs(
 @router.get("/tasks/{task_id}/stats", response_model=TaskStatsOut)
 def task_stats(
     task_id: str,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     as_of: date | None = Query(
         None,
         description=(
@@ -446,7 +446,7 @@ def task_stats(
 
 @router.get("/task-rest-days", response_model=list[TaskRestDayOut])
 def list_task_rest_days_on_date(
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     on: date = Query(..., description="Calendar day (YYYY-MM-DD)"),
 ) -> list[TaskRestDayOut]:
     """All tasks marked as resting on this day (per-task rest only; not global rest_days)."""
@@ -470,7 +470,7 @@ def list_task_rest_days_on_date(
 @router.get("/tasks/{task_id}/rest-days", response_model=list[RestDayOut])
 def list_task_rest_days_for_task(
     task_id: str,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
 ) -> list[RestDayOut]:
@@ -505,7 +505,7 @@ def list_task_rest_days_for_task(
 @router.post("/tasks/{task_id}/rest-days", response_model=RestDayOut, status_code=201)
 def add_task_rest_day(
     task_id: str,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     body: RestDayBody | None = None,
 ) -> RestDayOut:
     task = run_query(lambda: db.table("tasks").select("id").eq("id", task_id).limit(1))
@@ -546,7 +546,7 @@ def add_task_rest_day(
 def remove_task_rest_day(
     task_id: str,
     day: str,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
 ) -> None:
     task = run_query(lambda: db.table("tasks").select("id").eq("id", task_id).limit(1))
     if not task.data:
@@ -568,7 +568,7 @@ def remove_task_rest_day(
 
 @router.get("/weekly-review", response_model=WeeklyReviewOut)
 def get_weekly_review(
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     week_start: date | None = Query(None, description="Any day in the week; normalized to Monday"),
 ) -> WeeklyReviewOut:
     mon = _normalize_week_start(week_start)
@@ -599,7 +599,7 @@ def get_weekly_review(
 
 @router.get("/weekly-reviews", response_model=list[WeeklyReviewOut])
 def list_weekly_reviews(
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     limit: int = Query(100, ge=1, le=500),
 ) -> list[WeeklyReviewOut]:
     try:
@@ -620,7 +620,7 @@ def list_weekly_reviews(
 @router.put("/weekly-review", response_model=WeeklyReviewOut)
 def upsert_weekly_review(
     body: WeeklyReviewUpsert,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
 ) -> WeeklyReviewOut:
     mon = _normalize_week_start(body.week_start)
     mon_s = mon.isoformat()
@@ -672,7 +672,7 @@ def upsert_weekly_review(
 
 @router.get("/rest-days", response_model=list[RestDayOut])
 def list_rest_days(
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     date_from: date | None = Query(None, alias="from"),
     date_to: date | None = Query(None, alias="to"),
 ) -> list[RestDayOut]:
@@ -696,7 +696,7 @@ def list_rest_days(
 
 @router.post("/rest-days", response_model=RestDayOut, status_code=201)
 def add_rest_day(
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
     body: RestDayBody | None = None,
 ) -> RestDayOut:
     d = (body.date if body else None) or date.today()
@@ -719,7 +719,7 @@ def add_rest_day(
 @router.delete("/rest-days/{day}", status_code=204)
 def remove_rest_day(
     day: str,
-    db: Annotated[Client, Depends(get_supabase)],
+    db: Annotated[Client, Depends(get_supabase_user)],
 ) -> None:
     try:
         run_query(lambda: db.table("rest_days").delete().eq("date", day))
@@ -728,7 +728,7 @@ def remove_rest_day(
 
 
 @router.get("/export/json")
-def export_json(db: Annotated[Client, Depends(get_supabase)]) -> JSONResponse:
+def export_json(db: Annotated[Client, Depends(get_supabase_user)]) -> JSONResponse:
     try:
         tasks = run_query(
             lambda: db.table("tasks").select("*").order("created_at", desc=True)
@@ -774,7 +774,7 @@ def export_json(db: Annotated[Client, Depends(get_supabase)]) -> JSONResponse:
 
 
 @router.get("/export/csv")
-def export_csv(db: Annotated[Client, Depends(get_supabase)]) -> PlainTextResponse:
+def export_csv(db: Annotated[Client, Depends(get_supabase_user)]) -> PlainTextResponse:
     try:
         tasks = run_query(
             lambda: db.table("tasks").select("id, title, created_at").order(

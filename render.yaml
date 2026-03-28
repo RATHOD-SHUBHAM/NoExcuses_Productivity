@@ -1,5 +1,8 @@
-# Optional: Render Blueprint — set env vars in the dashboard (Supabase, CORS_ORIGINS).
-# Root directory in UI: `backend` (or adjust paths below if you deploy from repo root).
+# Optional Render Blueprint. Add secrets in the dashboard (not in this file):
+#   SUPABASE_URL, SUPABASE_KEY (anon/publishable only), SUPABASE_JWT_SECRET,
+#   CORS_ORIGINS=https://your-app.vercel.app
+#
+# After deploy, set the same VITE_API_BASE_URL on Vercel to this service’s URL.
 
 services:
   - type: web
@@ -8,3 +11,6 @@ services:
     rootDir: backend
     buildCommand: pip install .
     startCommand: uvicorn noexcuses_backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.11"

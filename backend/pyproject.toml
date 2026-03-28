@@ -2,10 +2,12 @@
 name = "noexcuses-backend"
 version = "0.1.0"
 description = "NoExcuses API"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
+    "certifi>=2024.0.0",
     "fastapi>=0.115.0",
     "pydantic-settings>=2.0.0",
+    "pyjwt[crypto]>=2.8.0",
     "supabase>=2.0.0",
     "uvicorn[standard]>=0.32.0",
 ]

@@ -13,11 +13,10 @@ _log = logging.getLogger("uvicorn.error")
 async def lifespan(_app: FastAPI):
     get_settings.cache_clear()
     s = get_settings()
-    if not is_elevated_supabase_key(s.supabase_key_for_server()):
+    if is_elevated_supabase_key(s.supabase_key):
         _log.warning(
-            "Supabase key for FastAPI is not elevated (e.g. sb_publishable_ or anon JWT). "
-            "POST/DELETE will hit RLS until you set SUPABASE_SECRET_KEY (sb_secret_…) or "
-            "SUPABASE_SERVICE_ROLE_KEY (legacy service_role eyJ…). Restart after .env changes."
+            "SUPABASE_KEY looks elevated (service_role or sb_secret). "
+            "Per-user mode requires the anon/publishable key as SUPABASE_KEY so RLS runs per JWT."
         )
     yield
 

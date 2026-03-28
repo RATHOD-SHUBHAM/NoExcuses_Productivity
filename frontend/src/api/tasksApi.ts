@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./config";
+import { getSupabase } from "../lib/supabaseClient";
 import type {
   ApiDailyCompletion,
   ApiRestDay,
@@ -22,17 +23,28 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
+async function authHeaders(): Promise<Record<string, string>> {
+  const sb = getSupabase();
+  if (!sb) return {};
+  const { data } = await sb.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
 async function requestJson<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
+  const auth = await authHeaders();
   let res: Response;
   try {
     res = await fetch(url, {
       ...init,
       headers: {
         Accept: "application/json",
+        ...auth,
         ...init?.headers,
       },
     });
@@ -244,9 +256,10 @@ function triggerDownload(blob: Blob, filename: string): void {
 
 async function downloadFromApi(path: string, filename: string): Promise<void> {
   const url = `${API_BASE_URL}${path}`;
+  const auth = await authHeaders();
   let res: Response;
   try {
-    res = await fetch(url);
+    res = await fetch(url, { headers: { ...auth } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (

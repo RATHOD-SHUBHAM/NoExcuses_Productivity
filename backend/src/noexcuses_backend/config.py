@@ -48,7 +48,11 @@ class Settings(BaseSettings):
     """Loads Supabase credentials from environment (use `.env` at repo root)."""
 
     supabase_url: str
+    # Anon / publishable key (sb_publishable_… or legacy anon JWT). Required for API DB access
+    # with end-user JWTs so RLS runs as authenticated.
     supabase_key: str
+    # Project Settings → API → JWT Secret (symmetric). Used to verify Supabase access tokens.
+    supabase_jwt_secret: str
     # Comma-separated browser origins allowed to call the API (Vercel + local dev).
     # Example: https://my-app.vercel.app,http://localhost:5173
     cors_origins: str | None = None
@@ -69,6 +73,14 @@ class Settings(BaseSettings):
     @field_validator("supabase_url", "supabase_key", mode="before")
     @classmethod
     def _normalize_required(cls, v: object) -> str:
+        s = _strip_env_value(v)
+        if not s:
+            raise ValueError("cannot be empty")
+        return s
+
+    @field_validator("supabase_jwt_secret", mode="before")
+    @classmethod
+    def _normalize_jwt_secret(cls, v: object) -> str:
         s = _strip_env_value(v)
         if not s:
             raise ValueError("cannot be empty")
