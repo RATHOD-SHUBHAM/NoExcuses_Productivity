@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,14 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
+
+
+@app.get("/api/public/config-check")
+def public_config_check() -> dict[str, str]:
+    """No auth. Lets the browser verify Vercel and Render use the same Supabase project."""
+    s = get_settings()
+    host = urlparse(s.supabase_url).hostname or ""
+    return {"supabase_host": host.lower()}
 
 
 @app.get("/")

@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { traceAuth } from "../lib/authTrace";
 import { getSupabase } from "../lib/supabaseClient";
 
 type AuthContextValue = {
@@ -25,32 +26,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const sb = getSupabase();
     if (!sb) {
+      traceAuth("AuthProvider: no Supabase client (missing URL/key in env)");
       setLoading(false);
       return;
     }
 
+    traceAuth("AuthProvider: initializing getSession + onAuthStateChange");
+
     let cancelled = false;
     const safety = window.setTimeout(() => {
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        traceAuth("AuthProvider: safety timeout (5s) — forcing loading false");
+        setLoading(false);
+      }
     }, 5000);
 
     void sb.auth
       .getSession()
-      .then(async ({ data: { session: s } }) => {
+      .then(async ({ data: { session: s }, error }) => {
         if (cancelled) return;
+        if (error) {
+          traceAuth("AuthProvider: getSession error", { message: error.message });
+          setSession(null);
+          return;
+        }
+        const hasToken = Boolean(s?.access_token?.trim());
+        traceAuth("AuthProvider: getSession done", {
+          hasSession: Boolean(s),
+          hasToken,
+          hasUser: Boolean(s?.user),
+        });
         if (s?.user && !s.access_token?.trim()) {
+          traceAuth("AuthProvider: corrupt session (user without token) → signOut");
           await sb.auth.signOut();
           setSession(null);
         } else {
           setSession(s ?? null);
         }
       })
+      .catch((e: unknown) => {
+        traceAuth("AuthProvider: getSession threw", {
+          message: e instanceof Error ? e.message : String(e),
+        });
+        if (!cancelled) {
+          setSession(null);
+        }
+      })
       .finally(() => {
         window.clearTimeout(safety);
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       });
 
-    const { data: sub } = sb.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = sb.auth.onAuthStateChange((event, next) => {
+      traceAuth("AuthProvider: onAuthStateChange", {
+        event,
+        hasSession: Boolean(next),
+        hasToken: Boolean(next?.access_token?.trim()),
+      });
       if (!cancelled) setSession(next);
     });
 

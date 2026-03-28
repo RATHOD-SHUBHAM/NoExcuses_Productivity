@@ -1,11 +1,18 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
-import { logDeployEnvDiagnostics } from "./lib/publicEnv";
+import { initAuthDebugFromUrl } from "./lib/authTrace";
+import {
+  logBackendSupabaseAlignment,
+  logDeployEnvDiagnostics,
+} from "./lib/publicEnv";
+
+initAuthDebugFromUrl();
 import "./index.css";
 import App from "./App";
 
 logDeployEnvDiagnostics();
+void logBackendSupabaseAlignment();
 
 const el = document.getElementById("root");
 if (!el) {

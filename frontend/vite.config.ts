@@ -29,12 +29,15 @@ export default defineConfig(({ mode }) => {
     }
   }
 
-  const define = Object.fromEntries(
+  const define: Record<string, string> = Object.fromEntries(
     Object.entries(viteEnv).map(([key, value]) => [
       `import.meta.env.${key}`,
       JSON.stringify(value ?? ""),
     ]),
   );
+
+  const vercelSha = (process.env.VERCEL_GIT_COMMIT_SHA ?? "").trim();
+  define["import.meta.env.VITE_DEPLOY_SHA"] = JSON.stringify(vercelSha);
 
   if (mode === "production") {
     const required = [

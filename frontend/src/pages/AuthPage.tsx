@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { traceAuth } from "../lib/authTrace";
 import { PageBackdrop } from "../components/layout/PageBackdrop";
 import { SiteFooter } from "../components/layout/SiteFooter";
 import { inputBase } from "../lib/ui";
@@ -8,6 +9,24 @@ import { getSupabase, isSupabaseConfigured } from "../lib/supabaseClient";
 
 export function AuthPage() {
   const { session, loading } = useAuth();
+  const supaOk = isSupabaseConfigured();
+
+  useEffect(() => {
+    if (!supaOk) {
+      traceAuth("AuthPage: showing setup-needed (Supabase env not in bundle)");
+      return;
+    }
+    if (loading) {
+      traceAuth("AuthPage: showing loading (waiting for getSession)");
+      return;
+    }
+    if (session?.access_token?.trim()) {
+      traceAuth("AuthPage: redirect to / (session already has access_token)");
+      return;
+    }
+    traceAuth("AuthPage: showing login / register form");
+  }, [supaOk, loading, session?.access_token]);
+
   const [register, setRegister] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
