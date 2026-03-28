@@ -14,10 +14,9 @@ import {
   bindApiAccessTokenRef,
   bindApiSessionRef,
   clearApiSessionRef,
-  effectiveAccessToken,
-  isAuthenticatedSession,
   normalizeStoredSession,
-  syncRuntimeAccessToken,
+  sessionBearerToken,
+  syncRuntimeAccessTokenFromSession,
 } from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 
@@ -35,8 +34,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionRef = useRef<Session | null>(session);
   sessionRef.current = session;
   const accessTokenRef = useRef<string | null>(null);
-  accessTokenRef.current = effectiveAccessToken(session);
-  syncRuntimeAccessToken(accessTokenRef.current);
+  accessTokenRef.current = sessionBearerToken(session);
+  syncRuntimeAccessTokenFromSession(session);
 
   useLayoutEffect(() => {
     bindApiSessionRef(sessionRef);
@@ -103,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (isAuthenticatedSession(next)) {
+      if (sessionBearerToken(next)) {
         setSession(next);
         return;
       }

@@ -15,6 +15,16 @@ function rawAccessToken(session: Session | null): string {
   return "";
 }
 
+/**
+ * JWT string if present — does NOT require `session.user`.
+ * Supabase can briefly expose a token before `user` is hydrated; requiring `user` cleared the
+ * runtime token while the route still showed the app, causing "Missing bearer" on every API call.
+ */
+export function sessionBearerToken(session: Session | null): string | null {
+  const t = rawAccessToken(session).trim();
+  return t.length > 0 ? t : null;
+}
+
 /** JWT for API calls when the user is present (same bar as route protection). */
 export function effectiveAccessToken(session: Session | null): string | null {
   if (!session?.user) return null;
@@ -45,6 +55,11 @@ let runtimeAccessToken: string | null = null;
 export function syncRuntimeAccessToken(token: string | null): void {
   runtimeAccessToken =
     typeof token === "string" && token.trim().length > 0 ? token.trim() : null;
+}
+
+/** Prefer this from AuthProvider — always mirrors whatever JWT is on the session object. */
+export function syncRuntimeAccessTokenFromSession(session: Session | null): void {
+  syncRuntimeAccessToken(sessionBearerToken(session));
 }
 
 export function getRuntimeAccessToken(): string | null {

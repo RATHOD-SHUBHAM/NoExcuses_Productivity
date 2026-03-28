@@ -8,7 +8,7 @@ import {
 import { AppShell } from "./components/layout/AppShell";
 import { PageBackdrop } from "./components/layout/PageBackdrop";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { effectiveAccessToken } from "./lib/authSession";
+import { sessionBearerToken } from "./lib/authSession";
 import { HomePage } from "./pages/HomePage";
 import { LegacyTaskRedirect } from "./pages/LegacyTaskRedirect";
 import { AuthPage } from "./pages/AuthPage";
@@ -28,13 +28,13 @@ function ProtectedLayout() {
     );
   }
 
-  if (!session?.user || !effectiveAccessToken(session)) {
+  if (!sessionBearerToken(session)) {
     return <Navigate to="/login" replace />;
   }
 
   return (
     <AppShell
-      userEmail={session.user.email ?? undefined}
+      userEmail={session?.user?.email ?? undefined}
       onSignOut={() => void signOut()}
     >
       <Outlet />

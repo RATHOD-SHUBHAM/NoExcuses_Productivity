@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { PageBackdrop } from "../components/layout/PageBackdrop";
 import { SiteFooter } from "../components/layout/SiteFooter";
 import { inputBase } from "../lib/ui";
-import { effectiveAccessToken } from "../lib/authSession";
+import { sessionBearerToken } from "../lib/authSession";
 import { getSupabase, isSupabaseConfigured } from "../lib/supabaseClient";
 
 export function AuthPage() {
@@ -56,7 +56,7 @@ export function AuthPage() {
     );
   }
 
-  if (effectiveAccessToken(session)) {
+  if (sessionBearerToken(session)) {
     return <Navigate to="/" replace />;
   }
 

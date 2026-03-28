@@ -1,8 +1,8 @@
 import { API_BASE_URL, assertApiBaseConfigured } from "./config";
 import {
-  effectiveAccessToken,
   getAccessTokenForApi,
   getRuntimeAccessToken,
+  sessionBearerToken,
 } from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 import type {
@@ -57,16 +57,16 @@ async function authHeaders(): Promise<Record<string, string>> {
   if (!sb) return {};
 
   let session = (await sb.auth.getSession()).data.session;
-  let token = session ? effectiveAccessToken(session) : null;
+  let token = session ? sessionBearerToken(session) : null;
   if (!token) {
     await new Promise<void>((r) => queueMicrotask(r));
     session = (await sb.auth.getSession()).data.session;
-    token = session ? effectiveAccessToken(session) : null;
+    token = session ? sessionBearerToken(session) : null;
   }
   if (!token) {
     const { data, error } = await sb.auth.refreshSession();
     if (!error && data.session) {
-      token = effectiveAccessToken(data.session);
+      token = sessionBearerToken(data.session);
     }
   }
   if (!token?.trim()) return {};
