@@ -5,10 +5,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
+  bindApiSessionRef,
+  clearApiSessionRef,
   isAuthenticatedSession,
   normalizeStoredSession,
 } from "../lib/authSession";
@@ -25,6 +28,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const sessionRef = useRef<Session | null>(session);
+  sessionRef.current = session;
+
+  useEffect(() => {
+    bindApiSessionRef(sessionRef);
+    return () => clearApiSessionRef();
+  }, []);
 
   useEffect(() => {
     const sb = getSupabase();

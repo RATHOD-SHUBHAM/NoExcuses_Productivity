@@ -16,6 +16,28 @@ export function isAuthenticatedSession(
   );
 }
 
+/** Ref kept in sync during AuthProvider render so API calls use the same token as the route guard (avoids child useEffect vs parent timing races). */
+export type ApiSessionRef = { current: Session | null };
+
+let apiSessionRef: ApiSessionRef | null = null;
+
+export function bindApiSessionRef(ref: ApiSessionRef): void {
+  apiSessionRef = ref;
+}
+
+export function clearApiSessionRef(): void {
+  apiSessionRef = null;
+}
+
+/** Synchronous read — must be called after AuthProvider has mounted. */
+export function getAccessTokenForApi(): string | null {
+  const s = apiSessionRef?.current ?? null;
+  if (!isAuthenticatedSession(s)) {
+    return null;
+  }
+  return s.access_token;
+}
+
 /**
  * Drop corrupt persisted sessions (user without token). Try refresh once; else sign out.
  */

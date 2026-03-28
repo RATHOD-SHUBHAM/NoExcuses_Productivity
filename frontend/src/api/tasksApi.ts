@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./config";
+import { getAccessTokenForApi } from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 import type {
   ApiDailyCompletion,
@@ -23,7 +24,28 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
+function mergeRequestHeaders(
+  auth: Record<string, string>,
+  init?: RequestInit,
+): Headers {
+  const h = new Headers();
+  h.set("Accept", "application/json");
+  if (init?.headers) {
+    new Headers(init.headers).forEach((value, key) => {
+      h.set(key, value);
+    });
+  }
+  if (auth.Authorization) {
+    h.set("Authorization", auth.Authorization);
+  }
+  return h;
+}
+
 async function authHeaders(): Promise<Record<string, string>> {
+  const bridged = getAccessTokenForApi();
+  if (bridged) {
+    return { Authorization: `Bearer ${bridged}` };
+  }
   const sb = getSupabase();
   if (!sb) return {};
   let session = (await sb.auth.getSession()).data.session;
@@ -68,11 +90,7 @@ async function requestJson<T>(
   try {
     res = await fetch(url, {
       ...init,
-      headers: {
-        Accept: "application/json",
-        ...auth,
-        ...init?.headers,
-      },
+      headers: mergeRequestHeaders(auth, init),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -283,7 +301,7 @@ async function downloadFromApi(path: string, filename: string): Promise<void> {
   const auth = await authHeaders();
   let res: Response;
   try {
-    res = await fetch(url, { headers: { ...auth } });
+    res = await fetch(url, { headers: mergeRequestHeaders(auth, undefined) });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (
