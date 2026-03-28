@@ -1,0 +1,1 @@
+"""NoExcuses FastAPI backend."""

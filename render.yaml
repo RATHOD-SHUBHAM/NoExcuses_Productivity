@@ -1,0 +1,10 @@
+# Optional: Render Blueprint — set env vars in the dashboard (Supabase, CORS_ORIGINS).
+# Root directory in UI: `backend` (or adjust paths below if you deploy from repo root).
+
+services:
+  - type: web
+    name: noexcuses-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install .
+    startCommand: uvicorn noexcuses_backend.main:app --host 0.0.0.0 --port $PORT
