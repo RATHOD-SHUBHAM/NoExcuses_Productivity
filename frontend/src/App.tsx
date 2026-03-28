@@ -19,6 +19,11 @@ import { LegacyTaskRedirect } from "./pages/LegacyTaskRedirect";
 import { AuthPage } from "./pages/AuthPage";
 import { TaskDetailPage } from "./pages/TaskDetailPage";
 
+/** Renders child routes only — required so `/login` and the protected tree are siblings under `/` (RR7). */
+function RootLayout() {
+  return <Outlet />;
+}
+
 function ProtectedLayout() {
   const navigate = useNavigate();
   const { session, loading, signOut } = useAuth();
@@ -99,25 +104,24 @@ function ProtectedLayout() {
 }
 
 /**
- * Data router (createBrowserRouter) so `/login` and `/` are explicit siblings.
- * Declarative <Routes> + nested `path="/"` caused missing login UI for some RR7 + SPA setups.
+ * RR7: top-level `path: "/login"` next to `path: "/"` can fail to match in production builds.
+ * Nest `login` + protected app as children of `path: "/"` + `<Outlet/>` so `/login` always resolves.
  */
 const appRouter = createBrowserRouter([
   {
-    path: "/login",
-    element: <AuthPage />,
-  },
-  {
-    path: "/login/",
-    element: <AuthPage />,
-  },
-  {
     path: "/",
-    element: <ProtectedLayout />,
+    element: <RootLayout />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: "tasks/:task_id", element: <TaskDetailPage /> },
-      { path: "task/:id", element: <LegacyTaskRedirect /> },
+      { path: "login", element: <AuthPage /> },
+      {
+        path: "",
+        element: <ProtectedLayout />,
+        children: [
+          { index: true, element: <HomePage /> },
+          { path: "tasks/:task_id", element: <TaskDetailPage /> },
+          { path: "task/:id", element: <LegacyTaskRedirect /> },
+        ],
+      },
     ],
   },
   {
