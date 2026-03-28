@@ -50,6 +50,13 @@ export function DeployConfigBlocker({ issues, deploySha }: Props) {
           </code>
           . After redeploy, this should match your latest Git commit on Vercel.
         </p>
+        <p className="mt-2 text-xs text-zinc-600">
+          Deploy fingerprint:{" "}
+          <code className="text-zinc-500">
+            {(import.meta.env.VITE_DEPLOY_FINGERPRINT ?? "").trim() || "—"}
+          </code>
+          . If this never changes after you redeploy, Vercel is not building your latest commit.
+        </p>
         <p className="mt-4 text-xs text-zinc-600">
           If this screen disappears but the app still errors: on Render set{" "}
           <code className="text-zinc-500">CORS_ORIGINS</code> to your exact Vercel

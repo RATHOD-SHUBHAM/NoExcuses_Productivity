@@ -1,6 +1,7 @@
 export function SiteFooter() {
   const year = new Date().getFullYear();
   const deploySha = (import.meta.env.VITE_DEPLOY_SHA ?? "").trim();
+  const fingerprint = (import.meta.env.VITE_DEPLOY_FINGERPRINT ?? "").trim();
 
   return (
     <footer
@@ -14,7 +15,12 @@ export function SiteFooter() {
       <p className="mt-1.5 text-[11px] text-zinc-600 sm:text-xs">
         © {year} Shubham Shankar. All rights reserved.
       </p>
-      {import.meta.env.PROD && deploySha.length > 0 ? (
+      {import.meta.env.PROD && fingerprint.length > 0 ? (
+        <p className="mt-2 font-mono text-[10px] text-zinc-600" title={fingerprint}>
+          deploy {fingerprint.length > 14 ? `${fingerprint.slice(0, 12)}…` : fingerprint}
+        </p>
+      ) : null}
+      {import.meta.env.PROD && fingerprint.length === 0 && deploySha.length > 0 ? (
         <p className="mt-2 font-mono text-[10px] text-zinc-700">
           build {deploySha.slice(0, 7)}
         </p>

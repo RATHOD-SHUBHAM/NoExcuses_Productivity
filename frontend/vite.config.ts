@@ -39,6 +39,19 @@ export default defineConfig(({ mode }) => {
   const vercelSha = (process.env.VERCEL_GIT_COMMIT_SHA ?? "").trim();
   define["import.meta.env.VITE_DEPLOY_SHA"] = JSON.stringify(vercelSha);
 
+  /** Proves which deploy is running (footer + console). Changes every Vercel build even when git SHA is missing. */
+  if (mode === "production") {
+    const deployFingerprint =
+      (process.env.VERCEL_DEPLOYMENT_ID ?? "").trim() ||
+      vercelSha ||
+      `local-${Date.now().toString(36)}`;
+    define["import.meta.env.VITE_DEPLOY_FINGERPRINT"] = JSON.stringify(
+      deployFingerprint,
+    );
+  } else {
+    define["import.meta.env.VITE_DEPLOY_FINGERPRINT"] = JSON.stringify("");
+  }
+
   if (mode === "production") {
     const required = [
       "VITE_SUPABASE_URL",

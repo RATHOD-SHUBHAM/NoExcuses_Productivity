@@ -17,6 +17,11 @@ async function bootstrap(): Promise<void> {
   logDeployEnvDiagnostics();
   void logBackendSupabaseAlignment();
 
+  const fp = (import.meta.env.VITE_DEPLOY_FINGERPRINT ?? "").trim();
+  if (import.meta.env.PROD && fp) {
+    console.info(`[NoExcuses] Deploy fingerprint: ${fp}`);
+  }
+
   const el = document.getElementById("root");
   if (!el) {
     throw new Error("Missing #root element in index.html");
