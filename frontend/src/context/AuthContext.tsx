@@ -17,6 +17,7 @@ import {
   effectiveAccessToken,
   isAuthenticatedSession,
   normalizeStoredSession,
+  syncRuntimeAccessToken,
 } from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   sessionRef.current = session;
   const accessTokenRef = useRef<string | null>(null);
   accessTokenRef.current = effectiveAccessToken(session);
+  syncRuntimeAccessToken(accessTokenRef.current);
 
   useLayoutEffect(() => {
     bindApiSessionRef(sessionRef);

@@ -1,5 +1,9 @@
-import { API_BASE_URL } from "./config";
-import { effectiveAccessToken, getAccessTokenForApi } from "../lib/authSession";
+import { API_BASE_URL, assertApiBaseConfigured } from "./config";
+import {
+  effectiveAccessToken,
+  getAccessTokenForApi,
+  getRuntimeAccessToken,
+} from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 import type {
   ApiDailyCompletion,
@@ -41,6 +45,10 @@ function mergeRequestHeaders(
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
+  const fromReact = getRuntimeAccessToken()?.trim();
+  if (fromReact) {
+    return { Authorization: `Bearer ${fromReact}` };
+  }
   const bridged = getAccessTokenForApi()?.trim();
   if (bridged) {
     return { Authorization: `Bearer ${bridged}` };
@@ -89,6 +97,7 @@ async function requestJson<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
+  assertApiBaseConfigured();
   const url = `${API_BASE_URL}${path}`;
   const auth = await authHeaders();
   let res: Response;
@@ -302,6 +311,7 @@ function triggerDownload(blob: Blob, filename: string): void {
 }
 
 async function downloadFromApi(path: string, filename: string): Promise<void> {
+  assertApiBaseConfigured();
   const url = `${API_BASE_URL}${path}`;
   const auth = await authHeaders();
   let res: Response;

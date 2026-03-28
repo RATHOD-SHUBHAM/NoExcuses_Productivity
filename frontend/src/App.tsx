@@ -8,7 +8,7 @@ import {
 import { AppShell } from "./components/layout/AppShell";
 import { PageBackdrop } from "./components/layout/PageBackdrop";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { isAuthenticatedSession } from "./lib/authSession";
+import { effectiveAccessToken } from "./lib/authSession";
 import { HomePage } from "./pages/HomePage";
 import { LegacyTaskRedirect } from "./pages/LegacyTaskRedirect";
 import { AuthPage } from "./pages/AuthPage";
@@ -28,7 +28,7 @@ function ProtectedLayout() {
     );
   }
 
-  if (!isAuthenticatedSession(session)) {
+  if (!session?.user || !effectiveAccessToken(session)) {
     return <Navigate to="/login" replace />;
   }
 

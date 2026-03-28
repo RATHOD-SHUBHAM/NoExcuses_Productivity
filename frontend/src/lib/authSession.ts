@@ -36,6 +36,21 @@ export type ApiAccessTokenRef = { current: string | null };
 let apiSessionRef: ApiSessionRef | null = null;
 let apiAccessTokenRef: ApiAccessTokenRef | null = null;
 
+/**
+ * JWT mirrored from Auth state every render — tasksApi reads this first so fetch() always
+ * matches the same session that passed the route guard (refs alone were unreliable after deploy).
+ */
+let runtimeAccessToken: string | null = null;
+
+export function syncRuntimeAccessToken(token: string | null): void {
+  runtimeAccessToken =
+    typeof token === "string" && token.trim().length > 0 ? token.trim() : null;
+}
+
+export function getRuntimeAccessToken(): string | null {
+  return runtimeAccessToken;
+}
+
 export function bindApiSessionRef(ref: ApiSessionRef): void {
   apiSessionRef = ref;
 }
@@ -48,6 +63,7 @@ export function bindApiAccessTokenRef(ref: ApiAccessTokenRef): void {
 export function clearApiSessionRef(): void {
   apiSessionRef = null;
   apiAccessTokenRef = null;
+  runtimeAccessToken = null;
 }
 
 /** Synchronous read — updated every AuthProvider render before children run effects. */
