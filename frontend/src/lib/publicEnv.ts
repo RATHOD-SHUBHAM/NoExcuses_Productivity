@@ -1,23 +1,30 @@
 /**
- * Browser-visible configuration (VITE_* only).
+ * Browser-visible configuration: baked `VITE_*` from Vite, optional runtime overrides
+ * from `/api/public-config` on Vercel (see `runtimePublicConfig.ts`).
  *
- * Flow:
- * 1. Local: `frontend/.env` and/or repo root `.env` — merged in `vite.config.ts` → baked into the bundle.
- * 2. Vercel: Project → Environment Variables (Production + Preview if you use preview URLs) → available as
- *    `process.env` during `vite build` → same merge in vite.config → baked in. Changing env requires a new deploy.
- * 3. Nothing in this file reads runtime server env; it is all compile-time replacements of `import.meta.env`.
+ * Local: `frontend/.env` merged in `vite.config.ts` → baked into the bundle.
+ * Vercel: prefer baked values; if missing, bootstrap loads serverless config before React mounts.
  */
+import {
+  getRuntimeOverrideApiBaseUrl,
+  getRuntimeOverrideSupabaseAnonKey,
+  getRuntimeOverrideSupabaseUrl,
+} from "./runtimePublicConfig";
 
-const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
-const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
-const apiBaseRaw = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "").trim();
+const bakedSupabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+const bakedSupabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+const bakedApiBaseRaw = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "").trim();
 
 export function getSupabaseUrl(): string {
-  return supabaseUrl;
+  const rt = getRuntimeOverrideSupabaseUrl();
+  if (rt) return rt;
+  return bakedSupabaseUrl;
 }
 
 export function getSupabaseAnonKey(): string {
-  return supabaseAnonKey;
+  const rt = getRuntimeOverrideSupabaseAnonKey();
+  if (rt) return rt;
+  return bakedSupabaseAnonKey;
 }
 
 /**
@@ -26,8 +33,10 @@ export function getSupabaseAnonKey(): string {
  * In production, missing env must stay empty so we do not silently call localhost:8000 from the user’s browser.
  */
 export function resolvedApiBaseUrl(): string {
-  if (apiBaseRaw.length > 0) {
-    return apiBaseRaw;
+  const rt = getRuntimeOverrideApiBaseUrl();
+  if (rt) return rt;
+  if (bakedApiBaseRaw.length > 0) {
+    return bakedApiBaseRaw;
   }
   if (import.meta.env.DEV) {
     return "http://localhost:8000";
@@ -36,7 +45,7 @@ export function resolvedApiBaseUrl(): string {
 }
 
 export function isSupabaseEnvConfigured(): boolean {
-  return supabaseUrl.length > 0 && supabaseAnonKey.length > 0;
+  return getSupabaseUrl().length > 0 && getSupabaseAnonKey().length > 0;
 }
 
 /** Production-only: Supabase vars required for the login page and session. */
@@ -45,14 +54,14 @@ export function getProductionSupabaseConfigIssues(): string[] {
     return [];
   }
   const lines: string[] = [];
-  if (!supabaseUrl) {
+  if (!getSupabaseUrl()) {
     lines.push(
-      "VITE_SUPABASE_URL is empty — add under Vercel → Environment Variables (Production), then Redeploy.",
+      "VITE_SUPABASE_URL is empty — add under Vercel → Environment Variables, redeploy, or ensure /api/public-config returns it.",
     );
   }
-  if (!supabaseAnonKey) {
+  if (!getSupabaseAnonKey()) {
     lines.push(
-      "VITE_SUPABASE_ANON_KEY is empty — same as Supabase anon/publishable key; redeploy after saving.",
+      "VITE_SUPABASE_ANON_KEY is empty — same as Supabase publishable key; redeploy or use /api/public-config.",
     );
   }
   return lines;
@@ -60,7 +69,7 @@ export function getProductionSupabaseConfigIssues(): string[] {
 
 /** Production-only: API URL missing — login still works; habit data API calls will fail. */
 export function getProductionApiConfigIssue(): string | null {
-  if (!import.meta.env.PROD || apiBaseRaw.length > 0) {
+  if (!import.meta.env.PROD || resolvedApiBaseUrl().length > 0) {
     return null;
   }
   return "VITE_API_BASE_URL is empty — set your Render API URL (no trailing slash), redeploy; until then the login page works but tasks will not load.";
@@ -73,7 +82,7 @@ export function getProductionConfigIssues(): string[] {
   return api ? [...supa, api] : [...supa];
 }
 
-/** Console signal when the production bundle is missing required VITE_* values. */
+/** Console signal when the production bundle is missing required config. */
 export function logDeployEnvDiagnostics(): void {
   const lines = getProductionConfigIssues();
   if (lines.length > 0) {

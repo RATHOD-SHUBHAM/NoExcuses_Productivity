@@ -1,5 +1,6 @@
-import { API_BASE_URL, assertApiBaseConfigured } from "./config";
+import { getApiAccessToken } from "../lib/apiAuthBridge";
 import { getSupabase } from "../lib/supabaseClient";
+import { API_BASE_URL, assertApiBaseConfigured } from "./config";
 import type {
   ApiDailyCompletion,
   ApiRestDay,
@@ -42,7 +43,10 @@ async function authHeaders(): Promise<Record<string, string>> {
   const sb = getSupabase();
   if (!sb) return {};
 
-  let token = (await sb.auth.getSession()).data.session?.access_token?.trim();
+  let token = getApiAccessToken()?.trim();
+  if (!token) {
+    token = (await sb.auth.getSession()).data.session?.access_token?.trim();
+  }
   if (!token) {
     const { data, error } = await sb.auth.refreshSession();
     if (!error) {

@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { setApiAccessToken } from "../lib/apiAuthBridge";
 import { traceAuth } from "../lib/authTrace";
 import { getSupabase } from "../lib/supabaseClient";
 
@@ -111,6 +112,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({ session, loading, signOut }),
     [session, loading, signOut],
   );
+
+  // Same render as children: guarantees tasksApi.authHeaders sees this token before child effects run.
+  setApiAccessToken(loading ? null : (session?.access_token ?? null));
 
   return (
     <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

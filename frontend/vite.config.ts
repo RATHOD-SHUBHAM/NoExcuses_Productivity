@@ -13,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  * 3. `process.env` (Vercel / CI injects `VITE_*` here during `vite build`)
  *
  * We push the result into `define` so `import.meta.env.VITE_*` is replaced at build time.
- * If a variable is missing at build time, it cannot be fixed in the browser later — redeploy.
+ * If missing on Vercel, `main.tsx` loads `/api/public-config` (serverless) before React mounts.
  */
 export default defineConfig(({ mode }) => {
   const repoRoot = path.resolve(__dirname, "..");

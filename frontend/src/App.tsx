@@ -1,10 +1,9 @@
 import { useEffect, useRef } from "react";
 import {
-  BrowserRouter,
   Navigate,
   Outlet,
-  Route,
-  Routes,
+  RouterProvider,
+  createBrowserRouter,
   useNavigate,
 } from "react-router-dom";
 import { ApiConfigBanner } from "./components/ApiConfigBanner";
@@ -74,8 +73,14 @@ function ProtectedLayout() {
         <div className="relative z-0 flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-sm text-zinc-300">
           <p>Opening sign-in…</p>
           <p className="max-w-sm text-xs text-zinc-500">
-            If this never finishes, open <code className="text-zinc-400">/login</code>{" "}
-            directly and check the browser console for{" "}
+            If this never finishes, open{" "}
+            <a
+              href="/login"
+              className="text-amber-200/90 underline underline-offset-2"
+            >
+              /login
+            </a>{" "}
+            (full page load) and check the console for{" "}
             <code className="text-zinc-400">[NoExcuses Auth]</code>.
           </p>
         </div>
@@ -93,6 +98,34 @@ function ProtectedLayout() {
   );
 }
 
+/**
+ * Data router (createBrowserRouter) so `/login` and `/` are explicit siblings.
+ * Declarative <Routes> + nested `path="/"` caused missing login UI for some RR7 + SPA setups.
+ */
+const appRouter = createBrowserRouter([
+  {
+    path: "/login",
+    element: <AuthPage />,
+  },
+  {
+    path: "/login/",
+    element: <AuthPage />,
+  },
+  {
+    path: "/",
+    element: <ProtectedLayout />,
+    children: [
+      { index: true, element: <HomePage /> },
+      { path: "tasks/:task_id", element: <TaskDetailPage /> },
+      { path: "task/:id", element: <LegacyTaskRedirect /> },
+    ],
+  },
+  {
+    path: "*",
+    element: <Navigate to="/" replace />,
+  },
+]);
+
 export default function App() {
   const supabaseIssues = getProductionSupabaseConfigIssues();
   if (supabaseIssues.length > 0) {
@@ -108,24 +141,10 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <ApiConfigBanner />
-        <Routes>
-          <Route path="/login/*" element={<AuthPage />} />
-          {/*
-            Explicit path="/" parent so / and /tasks/... match reliably (RR v7).
-            A pathless layout + index often renders an empty <Outlet /> → black screen.
-          */}
-          <Route path="/" element={<ProtectedLayout />}>
-            <Route index element={<HomePage />} />
-            <Route path="tasks/:task_id" element={<TaskDetailPage />} />
-            <Route path="task/:id" element={<LegacyTaskRedirect />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-        <AuthTraceHud />
-      </AuthProvider>
-    </BrowserRouter>
+    <AuthProvider>
+      <ApiConfigBanner />
+      <RouterProvider router={appRouter} />
+      <AuthTraceHud />
+    </AuthProvider>
   );
 }

@@ -6,23 +6,29 @@ import {
   logBackendSupabaseAlignment,
   logDeployEnvDiagnostics,
 } from "./lib/publicEnv";
+import { loadRuntimePublicConfigOnce } from "./lib/runtimePublicConfig";
 
-initAuthDebugFromUrl();
 import "./index.css";
 import App from "./App";
 
-logDeployEnvDiagnostics();
-void logBackendSupabaseAlignment();
+async function bootstrap(): Promise<void> {
+  initAuthDebugFromUrl();
+  await loadRuntimePublicConfigOnce();
+  logDeployEnvDiagnostics();
+  void logBackendSupabaseAlignment();
 
-const el = document.getElementById("root");
-if (!el) {
-  throw new Error('Missing #root element in index.html');
+  const el = document.getElementById("root");
+  if (!el) {
+    throw new Error("Missing #root element in index.html");
+  }
+
+  createRoot(el).render(
+    <StrictMode>
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
+    </StrictMode>,
+  );
 }
 
-createRoot(el).render(
-  <StrictMode>
-    <AppErrorBoundary>
-      <App />
-    </AppErrorBoundary>
-  </StrictMode>,
-);
+void bootstrap();
