@@ -52,35 +52,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false;
 
-    // Callback must stay synchronous: calling refreshSession/signOut inside it can deadlock
-    // (Supabase holds a lock). Defer normalize to a microtask.
+    // Bootstrap outside onAuthStateChange: only INITIAL_SESSION used loading=false before
+    // could strand the app on "Loading…" forever if that event never completed. getSession
+    // runs outside the auth lock so normalizeStoredSession (refresh/signOut) cannot deadlock.
+    void sb.auth
+      .getSession()
+      .then(async ({ data, error }) => {
+        if (cancelled) return;
+        try {
+          if (error) throw error;
+          const s = await normalizeStoredSession(sb, data.session ?? null);
+          if (!cancelled) setSession(s);
+        } catch {
+          if (!cancelled) setSession(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
     const { data: sub } = sb.auth.onAuthStateChange((event, next) => {
-      if (cancelled) {
-        return;
-      }
+      if (cancelled) return;
 
       if (event === "INITIAL_SESSION") {
-        queueMicrotask(() => {
-          void (async () => {
-            if (cancelled) {
-              return;
-            }
-            try {
-              const s = await normalizeStoredSession(sb, next);
-              if (!cancelled) {
-                setSession(s);
-              }
-            } catch {
-              if (!cancelled) {
-                setSession(null);
-              }
-            } finally {
-              if (!cancelled) {
-                setLoading(false);
-              }
-            }
-          })();
-        });
         return;
       }
 
@@ -101,9 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       queueMicrotask(() => {
         void normalizeStoredSession(sb, next).then((s) => {
-          if (!cancelled) {
-            setSession(s);
-          }
+          if (!cancelled) setSession(s);
         });
       });
     });
