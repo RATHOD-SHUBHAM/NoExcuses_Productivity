@@ -8,7 +8,6 @@ import {
 import { AppShell } from "./components/layout/AppShell";
 import { PageBackdrop } from "./components/layout/PageBackdrop";
 import { AuthProvider, useAuth } from "./context/AuthContext";
-import { sessionBearerToken } from "./lib/authSession";
 import { HomePage } from "./pages/HomePage";
 import { LegacyTaskRedirect } from "./pages/LegacyTaskRedirect";
 import { AuthPage } from "./pages/AuthPage";
@@ -28,7 +27,7 @@ function ProtectedLayout() {
     );
   }
 
-  if (!sessionBearerToken(session)) {
+  if (!session?.access_token?.trim()) {
     return <Navigate to="/login" replace />;
   }
 

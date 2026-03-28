@@ -4,20 +4,10 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
-import {
-  bindApiAccessTokenRef,
-  bindApiSessionRef,
-  clearApiSessionRef,
-  normalizeStoredSession,
-  sessionBearerToken,
-  syncRuntimeAccessTokenFromSession,
-} from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 
 type AuthContextValue = {
@@ -31,17 +21,6 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const sessionRef = useRef<Session | null>(session);
-  sessionRef.current = session;
-  const accessTokenRef = useRef<string | null>(null);
-  accessTokenRef.current = sessionBearerToken(session);
-  syncRuntimeAccessTokenFromSession(session);
-
-  useLayoutEffect(() => {
-    bindApiSessionRef(sessionRef);
-    bindApiAccessTokenRef(accessTokenRef);
-    return () => clearApiSessionRef();
-  }, []);
 
   useEffect(() => {
     const sb = getSupabase();
@@ -51,72 +30,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    const loadingDeadline = window.setTimeout(() => {
-      if (!cancelled) {
-        setLoading(false);
-      }
+    const safety = window.setTimeout(() => {
+      if (!cancelled) setLoading(false);
     }, 5000);
 
-    const clearDeadline = () => {
-      window.clearTimeout(loadingDeadline);
-    };
-
-    // getSession can return null before storage finishes hydrating; INITIAL_SESSION (below)
-    // applies the real session. Do not ignore INITIAL_SESSION.
     void sb.auth
       .getSession()
-      .then(async ({ data, error }) => {
+      .then(async ({ data: { session: s } }) => {
         if (cancelled) return;
-        try {
-          if (error) throw error;
-          const s = await normalizeStoredSession(sb, data.session ?? null);
-          if (!cancelled) setSession(s);
-        } catch {
-          if (!cancelled) setSession(null);
+        if (s?.user && !s.access_token?.trim()) {
+          await sb.auth.signOut();
+          setSession(null);
+        } else {
+          setSession(s ?? null);
         }
       })
       .finally(() => {
-        clearDeadline();
+        window.clearTimeout(safety);
         if (!cancelled) setLoading(false);
       });
 
-    const { data: sub } = sb.auth.onAuthStateChange((event, next) => {
-      if (cancelled) return;
-
-      if (event === "INITIAL_SESSION") {
-        queueMicrotask(() => {
-          void normalizeStoredSession(sb, next).then((s) => {
-            if (!cancelled) setSession(s);
-          });
-        });
-        return;
-      }
-
-      if (event === "SIGNED_OUT") {
-        setSession(null);
-        return;
-      }
-
-      if (next === null) {
-        setSession(null);
-        return;
-      }
-
-      if (sessionBearerToken(next)) {
-        setSession(next);
-        return;
-      }
-
-      queueMicrotask(() => {
-        void normalizeStoredSession(sb, next).then((s) => {
-          if (!cancelled) setSession(s);
-        });
-      });
+    const { data: sub } = sb.auth.onAuthStateChange((_event, next) => {
+      if (!cancelled) setSession(next);
     });
 
     return () => {
       cancelled = true;
-      clearDeadline();
+      window.clearTimeout(safety);
       sub.subscription.unsubscribe();
     };
   }, []);
@@ -124,11 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     setSession(null);
     const sb = getSupabase();
-    if (!sb) return;
-    try {
-      await sb.auth.signOut();
-    } catch {
-      /* still signed out locally */
+    if (sb) {
+      try {
+        await sb.auth.signOut();
+      } catch {
+        /* ignore */
+      }
     }
   }, []);
 

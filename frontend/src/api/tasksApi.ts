@@ -1,16 +1,10 @@
 import { API_BASE_URL, assertApiBaseConfigured } from "./config";
-import {
-  getAccessTokenForApi,
-  getRuntimeAccessToken,
-  sessionBearerToken,
-} from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 import type {
   ApiDailyCompletion,
   ApiRestDay,
   ApiTask,
   ApiTaskLog,
-  ApiTaskRestDay,
   ApiTaskStats,
   ApiWeeklyReview,
 } from "./types";
@@ -45,32 +39,18 @@ function mergeRequestHeaders(
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const fromReact = getRuntimeAccessToken()?.trim();
-  if (fromReact) {
-    return { Authorization: `Bearer ${fromReact}` };
-  }
-  const bridged = getAccessTokenForApi()?.trim();
-  if (bridged) {
-    return { Authorization: `Bearer ${bridged}` };
-  }
   const sb = getSupabase();
   if (!sb) return {};
 
-  let session = (await sb.auth.getSession()).data.session;
-  let token = session ? sessionBearerToken(session) : null;
-  if (!token) {
-    await new Promise<void>((r) => queueMicrotask(r));
-    session = (await sb.auth.getSession()).data.session;
-    token = session ? sessionBearerToken(session) : null;
-  }
+  let token = (await sb.auth.getSession()).data.session?.access_token?.trim();
   if (!token) {
     const { data, error } = await sb.auth.refreshSession();
-    if (!error && data.session) {
-      token = sessionBearerToken(data.session);
+    if (!error) {
+      token = data.session?.access_token?.trim();
     }
   }
-  if (!token?.trim()) return {};
-  return { Authorization: `Bearer ${token.trim()}` };
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
 }
 
 async function throwIfNotOk(res: Response): Promise<void> {
@@ -154,15 +134,12 @@ export function markTaskComplete(
   taskId: string,
   body?: { date?: string; completed?: boolean },
 ): Promise<ApiTaskLog> {
-  const payload: Record<string, unknown> = {};
-  if (body?.date) payload.date = body.date;
-  if (body?.completed === false) payload.completed = false;
   return requestJson<ApiTaskLog>(
     `/api/tasks/${encodeURIComponent(taskId)}/complete`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body ?? {}),
     },
   );
 }
@@ -191,27 +168,25 @@ export function getTaskLogs(taskId: string): Promise<ApiTaskLog[]> {
 /** GET /api/tasks/{task_id}/stats — pass asOf (YYYY-MM-DD) as browser-local “today” so rest/completion counts match the UI */
 export function getTaskStats(
   taskId: string,
-  asOf?: string,
+  asOf: string,
 ): Promise<ApiTaskStats> {
-  const q =
-    asOf !== undefined && asOf !== ""
-      ? `?as_of=${encodeURIComponent(asOf)}`
-      : "";
+  const q = new URLSearchParams({ as_of: asOf });
   return requestJson<ApiTaskStats>(
-    `/api/tasks/${encodeURIComponent(taskId)}/stats${q}`,
+    `/api/tasks/${encodeURIComponent(taskId)}/stats?${q}`,
   );
 }
 
 /** GET /api/weekly-review — week_start optional (YYYY-MM-DD, any day in week → Monday) */
 export function getWeeklyReview(weekStart?: string): Promise<ApiWeeklyReview> {
-  const q = weekStart
-    ? `?week_start=${encodeURIComponent(weekStart)}`
-    : "";
+  const q =
+    weekStart != null && weekStart.length > 0
+      ? `?week_start=${encodeURIComponent(weekStart)}`
+      : "";
   return requestJson<ApiWeeklyReview>(`/api/weekly-review${q}`);
 }
 
 /** GET /api/weekly-reviews — saved weeks, newest Monday first */
-export function listWeeklyReviews(limit = 100): Promise<ApiWeeklyReview[]> {
+export function listWeeklyReviews(limit: number): Promise<ApiWeeklyReview[]> {
   const q = new URLSearchParams({ limit: String(limit) });
   return requestJson<ApiWeeklyReview[]>(
     `/api/weekly-reviews?${q.toString()}`,
@@ -220,7 +195,7 @@ export function listWeeklyReviews(limit = 100): Promise<ApiWeeklyReview[]> {
 
 /** PUT /api/weekly-review */
 export function putWeeklyReview(body: {
-  week_start?: string;
+  week_start: string;
   what_worked: string;
   what_to_improve: string;
   what_to_drop: string;
@@ -249,16 +224,17 @@ export function addRestDay(date?: string): Promise<ApiRestDay> {
 
 /** DELETE /api/rest-days/{date} */
 export function deleteRestDay(date: string): Promise<void> {
-  return requestJson<void>(
-    `/api/rest-days/${encodeURIComponent(date)}`,
-    { method: "DELETE" },
-  );
+  return requestJson<void>(`/api/rest-days/${encodeURIComponent(date)}`, {
+    method: "DELETE",
+  });
 }
 
 /** GET /api/task-rest-days?on=YYYY-MM-DD — tasks with per-task rest on that day */
-export function listTaskRestDaysOnDate(on: string): Promise<ApiTaskRestDay[]> {
+export function listTaskRestDaysOnDate(
+  on: string,
+): Promise<{ task_id: string }[]> {
   const q = new URLSearchParams({ on });
-  return requestJson<ApiTaskRestDay[]>(
+  return requestJson<{ task_id: string }[]>(
     `/api/task-rest-days?${q.toString()}`,
   );
 }
@@ -268,9 +244,9 @@ export function listTaskRestDaysForTask(
   taskId: string,
   from: string,
   to: string,
-): Promise<ApiRestDay[]> {
+): Promise<{ date: string }[]> {
   const q = new URLSearchParams({ from, to });
-  return requestJson<ApiRestDay[]>(
+  return requestJson<{ date: string }[]>(
     `/api/tasks/${encodeURIComponent(taskId)}/rest-days?${q.toString()}`,
   );
 }
