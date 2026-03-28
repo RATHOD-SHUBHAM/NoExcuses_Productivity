@@ -30,9 +30,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const sessionRef = useRef<Session | null>(session);
   sessionRef.current = session;
+  // Must run during render, not in useEffect: React runs child effects before parent
+  // effects, so HomePage could call the API before a parent-only bind effect ran.
+  bindApiSessionRef(sessionRef);
 
   useEffect(() => {
-    bindApiSessionRef(sessionRef);
     return () => clearApiSessionRef();
   }, []);
 

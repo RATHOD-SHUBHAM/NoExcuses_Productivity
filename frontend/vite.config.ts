@@ -12,7 +12,13 @@ export default defineConfig(({ mode }) => {
   // Merge repo root + frontend/.env so both Option A (frontend/.env) and root .env work.
   const rootVite = loadEnv(mode, repoRoot, "VITE_");
   const feVite = loadEnv(mode, frontendRoot, "VITE_");
-  const viteEnv = { ...rootVite, ...feVite };
+  const viteEnv: Record<string, string> = { ...rootVite, ...feVite };
+  // Vercel/CI set secrets on process.env; force them to win over any merged .env files.
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith("VITE_") && process.env[key] !== undefined) {
+      viteEnv[key] = process.env[key] as string;
+    }
+  }
 
   return {
     envDir: frontendRoot,
