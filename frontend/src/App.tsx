@@ -5,6 +5,7 @@ import {
   Outlet,
   Route,
   Routes,
+  useNavigate,
 } from "react-router-dom";
 import { ApiConfigBanner } from "./components/ApiConfigBanner";
 import { AuthTraceHud } from "./components/AuthTraceHud";
@@ -20,11 +21,21 @@ import { AuthPage } from "./pages/AuthPage";
 import { TaskDetailPage } from "./pages/TaskDetailPage";
 
 function ProtectedLayout() {
+  const navigate = useNavigate();
   const { session, loading, signOut } = useAuth();
   const layoutTrace = useRef<string>("");
+  const token = session?.access_token?.trim() ?? "";
 
   useEffect(() => {
-    const token = session?.access_token?.trim() ?? "";
+    if (loading) {
+      return;
+    }
+    if (!token) {
+      navigate("/login", { replace: true });
+    }
+  }, [loading, token, navigate]);
+
+  useEffect(() => {
     const key = loading
       ? "loading"
       : !token
@@ -43,7 +54,7 @@ function ProtectedLayout() {
         email: session?.user?.email ?? null,
       });
     }
-  }, [loading, session?.access_token, session?.user?.email]);
+  }, [loading, token, session?.user?.email]);
 
   if (loading) {
     return (
@@ -56,8 +67,20 @@ function ProtectedLayout() {
     );
   }
 
-  if (!session?.access_token?.trim()) {
-    return <Navigate to="/login" replace />;
+  if (!token) {
+    return (
+      <div className="relative flex min-h-dvh flex-col font-sans text-zinc-100">
+        <PageBackdrop />
+        <div className="relative z-0 flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-sm text-zinc-300">
+          <p>Opening sign-in…</p>
+          <p className="max-w-sm text-xs text-zinc-500">
+            If this never finishes, open <code className="text-zinc-400">/login</code>{" "}
+            directly and check the browser console for{" "}
+            <code className="text-zinc-400">[NoExcuses Auth]</code>.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -89,7 +112,7 @@ export default function App() {
       <AuthProvider>
         <ApiConfigBanner />
         <Routes>
-          <Route path="/login" element={<AuthPage />} />
+          <Route path="/login/*" element={<AuthPage />} />
           {/*
             Explicit path="/" parent so / and /tasks/... match reliably (RR v7).
             A pathless layout + index often renders an empty <Outlet /> → black screen.

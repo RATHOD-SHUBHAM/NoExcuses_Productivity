@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { traceAuth } from "../lib/authTrace";
 import { PageBackdrop } from "../components/layout/PageBackdrop";
@@ -8,8 +8,19 @@ import { inputBase } from "../lib/ui";
 import { getSupabase, isSupabaseConfigured } from "../lib/supabaseClient";
 
 export function AuthPage() {
+  const navigate = useNavigate();
   const { session, loading } = useAuth();
   const supaOk = isSupabaseConfigured();
+  const hasToken = Boolean(session?.access_token?.trim());
+
+  useEffect(() => {
+    if (loading || !supaOk) {
+      return;
+    }
+    if (hasToken) {
+      navigate("/", { replace: true });
+    }
+  }, [loading, supaOk, hasToken, navigate]);
 
   useEffect(() => {
     if (!supaOk) {
@@ -20,12 +31,12 @@ export function AuthPage() {
       traceAuth("AuthPage: showing loading (waiting for getSession)");
       return;
     }
-    if (session?.access_token?.trim()) {
+    if (hasToken) {
       traceAuth("AuthPage: redirect to / (session already has access_token)");
       return;
     }
     traceAuth("AuthPage: showing login / register form");
-  }, [supaOk, loading, session?.access_token]);
+  }, [supaOk, loading, hasToken]);
 
   const [register, setRegister] = useState(false);
   const [email, setEmail] = useState("");
@@ -74,8 +85,19 @@ export function AuthPage() {
     );
   }
 
-  if (session?.access_token?.trim()) {
-    return <Navigate to="/" replace />;
+  if (hasToken) {
+    return (
+      <div className="relative flex min-h-dvh flex-col font-sans text-zinc-100">
+        <PageBackdrop />
+        <main className="relative z-0 flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-sm text-zinc-300">
+          <p>Signed in — opening the app…</p>
+          <p className="max-w-sm text-xs text-zinc-500">
+            Stuck here? Clear site data for this origin or open a private window, then
+            try <code className="text-zinc-400">/login</code> again.
+          </p>
+        </main>
+      </div>
+    );
   }
 
   async function submit(e: React.FormEvent) {
