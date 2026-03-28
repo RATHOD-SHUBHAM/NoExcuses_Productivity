@@ -23,17 +23,17 @@ export function AuthPage() {
         <main className="relative z-0 mx-auto max-w-md flex-1 px-4 py-16">
           <h1 className="text-lg font-semibold text-zinc-100">Setup needed</h1>
           <p className="mt-2 text-sm text-zinc-400">
-            Vite only reads a real{" "}
-            <code className="text-zinc-300">.env</code> file — not{" "}
-            <code className="text-zinc-300">.env.example</code>. Add{" "}
-            <code className="text-zinc-300">VITE_SUPABASE_URL</code> and{" "}
-            <code className="text-zinc-300">VITE_SUPABASE_ANON_KEY</code> to{" "}
-            <code className="text-zinc-300">frontend/.env</code>{" "}
-            <span className="text-zinc-500">or</span> the repo root{" "}
-            <code className="text-zinc-300">.env</code> (same values as{" "}
-            <code className="text-zinc-300">SUPABASE_URL</code> / publishable{" "}
-            <code className="text-zinc-300">SUPABASE_KEY</code>), then restart{" "}
-            <code className="text-zinc-300">npm run dev</code>.
+            <strong className="font-medium text-zinc-300">Vercel / production:</strong>{" "}
+            set <code className="text-zinc-300">VITE_SUPABASE_URL</code> and{" "}
+            <code className="text-zinc-300">VITE_SUPABASE_ANON_KEY</code> under{" "}
+            <span className="text-zinc-300">Project → Environment Variables</span>, then
+            redeploy (Vite bakes these in at build time).
+          </p>
+          <p className="mt-3 text-sm text-zinc-400">
+            <strong className="font-medium text-zinc-300">Local dev:</strong> add the same
+            keys to <code className="text-zinc-300">frontend/.env</code> or the repo root{" "}
+            <code className="text-zinc-300">.env</code> (publishable anon key, not
+            service_role), then restart <code className="text-zinc-300">npm run dev</code>.
           </p>
           <p className="mt-3 text-xs text-zinc-600">
             Quick start:{" "}
@@ -184,6 +184,12 @@ export function AuthPage() {
                 : "New here? Create an account"}
             </button>
           </div>
+
+          <p className="mt-8 text-center text-[11px] leading-relaxed text-zinc-500 sm:text-xs">
+            If you land on the app without signing in, this browser still has a saved
+            session. Use <span className="text-zinc-400">Log out</span> in the header to
+            switch accounts, or use a private / incognito window.
+          </p>
         </div>
       </main>
       <SiteFooter />

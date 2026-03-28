@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import { AddTaskSection } from "../components/home/AddTaskSection";
 import { ConsistencyGraphSection } from "../components/home/ConsistencyGraphSection";
 import { QuoteSection } from "../components/home/QuoteSection";
@@ -45,6 +46,9 @@ async function tasksWithTodayFromApi(): Promise<Task[]> {
 }
 
 export function HomePage() {
+  const { session } = useAuth();
+  const uid = session?.user?.id ?? "";
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
@@ -107,12 +111,14 @@ export function HomePage() {
   }, []);
 
   useEffect(() => {
+    if (!uid) return;
     void loadTasks();
-  }, [loadTasks]);
+  }, [loadTasks, uid]);
 
   useEffect(() => {
+    if (!uid) return;
     void loadGraph();
-  }, [loadGraph]);
+  }, [loadGraph, uid]);
 
   async function addTask(title: string) {
     setTasksError(null);

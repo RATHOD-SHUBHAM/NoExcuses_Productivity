@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { ContributionGrid } from "../components/heatmaps/ContributionGrid";
 import { WeeklyHeatmapStrip } from "../components/heatmaps/WeeklyHeatmapStrip";
 import * as tasksApi from "../api/tasksApi";
@@ -39,6 +40,8 @@ function parseTaskCreatedAt(iso: string): Date {
 export function TaskDetailPage() {
   const { task_id } = useParams<{ task_id: string }>();
   const navigate = useNavigate();
+  const { session } = useAuth();
+  const uid = session?.user?.id ?? "";
 
   const [title, setTitle] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -114,8 +117,9 @@ export function TaskDetailPage() {
   }, [task_id]);
 
   useEffect(() => {
+    if (!uid) return;
     void load();
-  }, [load]);
+  }, [load, uid]);
 
   const today = todayLocalISO();
   const completedToday = useMemo(

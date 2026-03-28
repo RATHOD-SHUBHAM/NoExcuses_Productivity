@@ -10,8 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import {
+  bindApiAccessTokenRef,
   bindApiSessionRef,
   clearApiSessionRef,
+  effectiveAccessToken,
   isAuthenticatedSession,
   normalizeStoredSession,
 } from "../lib/authSession";
@@ -30,9 +32,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const sessionRef = useRef<Session | null>(session);
   sessionRef.current = session;
-  // Must run during render, not in useEffect: React runs child effects before parent
-  // effects, so HomePage could call the API before a parent-only bind effect ran.
+  const accessTokenRef = useRef<string | null>(null);
+  accessTokenRef.current = effectiveAccessToken(session);
+  // During render (not useEffect): child effects run before parent effects, so the API
+  // layer must see the token before HomePage’s first fetch.
   bindApiSessionRef(sessionRef);
+  bindApiAccessTokenRef(accessTokenRef);
 
   useEffect(() => {
     return () => clearApiSessionRef();
@@ -46,39 +51,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
-    void sb.auth
-      .getSession()
-      .then(({ data }) => normalizeStoredSession(sb, data.session ?? null))
-      .then((s) => {
-        if (!cancelled) {
-          setSession(s);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSession(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-    const { data: sub } = sb.auth.onAuthStateChange((_event, next) => {
+
+    // Callback must stay synchronous: calling refreshSession/signOut inside it can deadlock
+    // (Supabase holds a lock). Defer normalize to a microtask.
+    const { data: sub } = sb.auth.onAuthStateChange((event, next) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (event === "INITIAL_SESSION") {
+        queueMicrotask(() => {
+          void (async () => {
+            if (cancelled) {
+              return;
+            }
+            try {
+              const s = await normalizeStoredSession(sb, next);
+              if (!cancelled) {
+                setSession(s);
+              }
+            } catch {
+              if (!cancelled) {
+                setSession(null);
+              }
+            } finally {
+              if (!cancelled) {
+                setLoading(false);
+              }
+            }
+          })();
+        });
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        setSession(null);
+        return;
+      }
+
       if (next === null) {
         setSession(null);
         return;
       }
+
       if (isAuthenticatedSession(next)) {
         setSession(next);
         return;
       }
-      void normalizeStoredSession(sb, next).then((s) => {
-        if (!cancelled) {
-          setSession(s);
-        }
+
+      queueMicrotask(() => {
+        void normalizeStoredSession(sb, next).then((s) => {
+          if (!cancelled) {
+            setSession(s);
+          }
+        });
       });
     });
+
     return () => {
       cancelled = true;
       sub.subscription.unsubscribe();

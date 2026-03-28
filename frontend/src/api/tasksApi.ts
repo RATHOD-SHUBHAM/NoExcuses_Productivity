@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "./config";
-import { getAccessTokenForApi } from "../lib/authSession";
+import { effectiveAccessToken, getAccessTokenForApi } from "../lib/authSession";
 import { getSupabase } from "../lib/supabaseClient";
 import type {
   ApiDailyCompletion,
@@ -27,37 +27,42 @@ async function parseError(res: Response): Promise<string> {
 function mergeRequestHeaders(
   auth: Record<string, string>,
   init?: RequestInit,
-): Headers {
-  const h = new Headers();
-  h.set("Accept", "application/json");
+): Record<string, string> {
+  const out: Record<string, string> = { Accept: "application/json" };
   if (init?.headers) {
     new Headers(init.headers).forEach((value, key) => {
-      h.set(key, value);
+      out[key] = value;
     });
   }
   if (auth.Authorization) {
-    h.set("Authorization", auth.Authorization);
+    out.Authorization = auth.Authorization;
   }
-  return h;
+  return out;
 }
 
 async function authHeaders(): Promise<Record<string, string>> {
-  const bridged = getAccessTokenForApi();
+  const bridged = getAccessTokenForApi()?.trim();
   if (bridged) {
     return { Authorization: `Bearer ${bridged}` };
   }
   const sb = getSupabase();
   if (!sb) return {};
+
   let session = (await sb.auth.getSession()).data.session;
-  if (!session?.access_token) {
+  let token = session ? effectiveAccessToken(session) : null;
+  if (!token) {
+    await new Promise<void>((r) => queueMicrotask(r));
+    session = (await sb.auth.getSession()).data.session;
+    token = session ? effectiveAccessToken(session) : null;
+  }
+  if (!token) {
     const { data, error } = await sb.auth.refreshSession();
-    if (!error) {
-      session = data.session ?? session;
+    if (!error && data.session) {
+      token = effectiveAccessToken(data.session);
     }
   }
-  const token = session?.access_token;
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
+  if (!token?.trim()) return {};
+  return { Authorization: `Bearer ${token.trim()}` };
 }
 
 async function throwIfNotOk(res: Response): Promise<void> {
