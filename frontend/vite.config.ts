@@ -69,10 +69,33 @@ export default defineConfig(({ mode }) => {
     }
   }
 
+  const htmlBuildStamp =
+    mode === "production"
+      ? (process.env.VERCEL_DEPLOYMENT_ID ?? "").trim() ||
+        vercelSha ||
+        `local-${Date.now().toString(36)}`
+      : "";
+
   return {
     envDir: frontendRoot,
     define,
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: "noexcuses-html-build-stamp",
+        transformIndexHtml(html) {
+          if (!htmlBuildStamp) {
+            return html;
+          }
+          const safe = htmlBuildStamp.replace(/"/g, "");
+          return html.replace(
+            "</head>",
+            `<meta name="noexcuses-build" content="${safe}" />\n    </head>`,
+          );
+        },
+      },
+    ],
     server: {
       proxy: {
         "/zen-api": {
