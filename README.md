@@ -12,19 +12,9 @@ Open the Vercel link to use the app. **New user?** Use **sign up** with your ema
 
 ## Screenshots
 
-Add images under `docs/images/` (create the folder if needed), then embed them in this section. Example markdown once files exist:
+<img width="1105" height="234" alt="Image" src="https://github.com/user-attachments/assets/15f4125d-ed14-4179-a45b-c63c926495ad" />
 
-```markdown
-![Dashboard](docs/images/dashboard.png)
-![Tasks and streaks](docs/images/tasks.png)
-```
-
-<!--
-Uncomment and adjust paths when screenshots are ready:
-
-![NoExcuses — dashboard](docs/images/dashboard.png)
-![NoExcuses — tasks](docs/images/tasks.png)
--->
+---
 
 ## Description
 
