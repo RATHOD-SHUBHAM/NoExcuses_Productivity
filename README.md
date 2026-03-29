@@ -28,7 +28,9 @@ Uncomment and adjust paths when screenshots are ready:
 
 ## Description
 
-NoExcuses is a habit and productivity tracker: **per-account** data with **Supabase Auth** (email/password), tasks with daily completion logs, streaks and stats, weekly reviews (saved in the database with history and export), global and per-task rest days, and CSV/JSON export. The app is a **React (Vite) frontend** and a **FastAPI backend** backed by **Supabase (PostgreSQL)** and row-level security.
+NoExcuses is a habit and accountability app: **per-account** data with **Supabase Auth** (email/password), **daily** and **monthly** goals, completion logs, calendar heatmaps, rest days (whole-day and per-habit), rhythm charts, a **weekly review** (saved per week), and a **weekend wishlist** (ideas for the coming Sat–Sun — not habit tasks). Optional **time windows** (HH:MM) for daily habits and a **12h / 24h** time display preference (browser, stored locally).
+
+Stack: **React (Vite)** frontend, **FastAPI** API, **Supabase (PostgreSQL)** with row-level security.
 
 ## Version
 
@@ -47,7 +49,7 @@ You need:
 2. **Python 3.12+** and **[uv](https://docs.astral.sh/uv/)** for the backend (see `.python-version` for a suggested local version).
 3. A **Supabase** project and API keys.
 
-Clone the repository, configure environment variables, apply SQL migrations in Supabase, then run the API and the dev server (see **Installation** and **Run locally**).
+Clone the repository, configure environment variables, apply **all** SQL migrations through **`008_weekend_plans.sql`** in Supabase, then run the API and the dev server (see **Installation** and **Run locally**).
 
 ## Dependencies
 
@@ -151,7 +153,7 @@ In the Supabase SQL editor, run scripts **in order** from `backend/sql/`:
 5. **`005_user_isolation.sql`** — **per-user** columns and RLS (`user_id`, composite keys). **Truncates** all habit/review/rest data. Enable **Email** (or your provider) under **Authentication → Providers** before users sign up.
 6. **`006_task_kinds.sql`** — `task_kind` (`daily` | `monthly`) and `month_bucket` on `tasks` for monthly goals vs daily todos.
 7. **`007_task_time_windows.sql`** — `window_start` / `window_end` on `tasks` (optional HH:MM windows for daily habits). Required for task create/update that sets time windows.
-8. **`008_weekend_plans.sql`** — `weekend_plans` (optional notes for an upcoming weekend, keyed by Saturday). Required for the **This weekend** block on Home.
+8. **`008_weekend_plans.sql`** — `weekend_plans` (weekend **wishlist** items stored as JSON in `notes`, keyed by Saturday). Required for the **This weekend** section on Home.
 
 Optional: **`001_task_logs_unique_task_date.sql`** only if your `task_logs` table was created without the unique constraint.
 
@@ -212,11 +214,17 @@ If the browser shows CORS errors, set **`CORS_ORIGINS`** on Render to the **exac
 
 ### Checklist
 
+- [ ] Supabase: migrations **000 → 008** applied on the project you use in production (`007` needed for planned time windows; `008` for weekend wishlist).
 - [ ] Render: `SUPABASE_KEY` is **publishable**, not service_role.
 - [ ] Vercel: `VITE_API_BASE_URL` matches Render (HTTPS, no trailing `/`).
 - [ ] Render: `CORS_ORIGINS` includes your Vercel production URL.
 - [ ] Secrets only in Render / Vercel env, never committed.
 - [ ] Free Render tier may **sleep**; first request after idle can be slow.
+
+### Troubleshooting
+
+- **Browser can’t reach the API** — Ensure the FastAPI service is running (local: port 8000), `VITE_API_BASE_URL` matches the API origin (no trailing slash), and redeploy Vercel after changing `VITE_*`.
+- **Database / schema errors** — If Supabase returns missing column or table errors, run the corresponding SQL from `backend/sql/` in order. PostgREST may need a moment to refresh schema after `ALTER TABLE`.
 
 ### Local vs production env
 
