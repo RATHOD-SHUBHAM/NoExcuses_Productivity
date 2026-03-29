@@ -16,6 +16,9 @@ Open the Vercel link to use the app. **New user?** Use **sign up** with your ema
 
 
 <img width="867" height="667" alt="Image" src="https://github.com/user-attachments/assets/56039221-8dd9-43da-b944-1b54077876e0" />
+
+<img width="1108" height="913" alt="Image" src="https://github.com/user-attachments/assets/7352004c-a318-417f-9d91-aa9767642906" />
+
 ---
 
 ## Description
