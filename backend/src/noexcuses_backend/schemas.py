@@ -1,18 +1,31 @@
+import json
+import uuid
 from datetime import date as Date
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 class TaskCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
+    task_kind: Literal["daily", "monthly"] = "daily"
+    """First day of the month (YYYY-MM-01) for monthly goals; omit or null for daily tasks."""
+
+    month_bucket: Date | None = None
+    """Optional same-day window (24h HH:MM local) for daily habits only; omit or set both."""
+    window_start: str | None = None
+    window_end: str | None = None
 
 
 class TaskOut(BaseModel):
     id: str
     title: str
     created_at: datetime
+    task_kind: Literal["daily", "monthly"] = "daily"
+    month_bucket: Date | None = None
+    window_start: str | None = None
+    window_end: str | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> "TaskOut":
@@ -21,7 +34,30 @@ class TaskOut(BaseModel):
             dt = datetime.fromisoformat(ca.replace("Z", "+00:00"))
         else:
             dt = ca
-        return cls(id=str(row["id"]), title=row["title"], created_at=dt)
+        kind_raw = row.get("task_kind")
+        kind: Literal["daily", "monthly"] = (
+            "monthly" if kind_raw == "monthly" else "daily"
+        )
+        mb_raw = row.get("month_bucket")
+        mb: Date | None = None
+        if mb_raw is not None:
+            if isinstance(mb_raw, str):
+                mb = Date.fromisoformat(mb_raw[:10])
+            elif isinstance(mb_raw, datetime):
+                mb = mb_raw.date()
+            elif isinstance(mb_raw, Date):
+                mb = mb_raw
+        ws = row.get("window_start")
+        we = row.get("window_end")
+        return cls(
+            id=str(row["id"]),
+            title=row["title"],
+            created_at=dt,
+            task_kind=kind,
+            month_bucket=mb,
+            window_start=str(ws).strip() if isinstance(ws, str) and ws.strip() else None,
+            window_end=str(we).strip() if isinstance(we, str) and we.strip() else None,
+        )
 
 
 class TaskLogOut(BaseModel):
@@ -50,6 +86,29 @@ class DailyCompletion(BaseModel):
     rest_marks: int = 0
     """Whole-day rest applies to every habit on this date."""
     global_rest: bool = False
+
+
+class CalendarDayTaskOut(BaseModel):
+    task_id: str
+    title: str
+    task_kind: Literal["daily", "monthly"] = "daily"
+    month_bucket: Date | None = None
+    completed: bool
+    rest_today: bool
+    window_start: str | None = None
+    window_end: str | None = None
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = Field(None, min_length=1, max_length=500)
+    window_start: str | None = None
+    window_end: str | None = None
+
+
+class CalendarDayOut(BaseModel):
+    date: Date
+    global_rest: bool
+    tasks: list[CalendarDayTaskOut]
 
 
 class TaskStatsOut(BaseModel):
@@ -111,6 +170,109 @@ def _parse_optional_dt(v: Any) -> datetime | None:
     if isinstance(v, str):
         return datetime.fromisoformat(v.replace("Z", "+00:00"))
     return None
+
+
+class WeekendWishlistItem(BaseModel):
+    """Single line for the weekend wishlist (not a habit task)."""
+
+    id: str = Field(..., min_length=1, max_length=80)
+    text: str = Field(..., min_length=1, max_length=500)
+    done: bool = False
+
+
+def _weekend_wishlist_from_notes(raw: str | None) -> list["WeekendWishlistItem"]:
+    if not raw or not str(raw).strip():
+        return []
+    s = str(raw).strip()
+    try:
+        data = json.loads(s)
+    except json.JSONDecodeError:
+        lines = [ln.strip() for ln in s.split("\n") if ln.strip()]
+        return [
+            WeekendWishlistItem(
+                id=str(uuid.uuid4()),
+                text=ln[:500],
+                done=False,
+            )
+            for ln in lines
+        ]
+    if isinstance(data, dict) and "items" in data:
+        out: list[WeekendWishlistItem] = []
+        for it in data.get("items") or []:
+            if isinstance(it, dict):
+                tid = str(it.get("id") or uuid.uuid4())
+                text = str(it.get("text") or "").strip()
+                if not text:
+                    continue
+                out.append(
+                    WeekendWishlistItem(
+                        id=tid[:80],
+                        text=text[:500],
+                        done=bool(it.get("done")),
+                    )
+                )
+            elif isinstance(it, str) and it.strip():
+                out.append(
+                    WeekendWishlistItem(
+                        id=str(uuid.uuid4()),
+                        text=it.strip()[:500],
+                        done=False,
+                    )
+                )
+        return out
+    if isinstance(data, list):
+        return [
+            WeekendWishlistItem(
+                id=str(uuid.uuid4()),
+                text=str(x).strip()[:500],
+                done=False,
+            )
+            for x in data
+            if str(x).strip()
+        ]
+    return []
+
+
+def weekend_notes_json_from_items(items: list["WeekendWishlistItem"]) -> str:
+    return json.dumps(
+        {
+            "v": 1,
+            "items": [i.model_dump() for i in items],
+        },
+        ensure_ascii=False,
+    )
+
+
+class WeekendPlanUpsert(BaseModel):
+    """weekend_start = Saturday (YYYY-MM-DD). Items are a wishlist, not tasks."""
+
+    weekend_start: Date
+    items: list[WeekendWishlistItem] = Field(default_factory=list, max_length=50)
+
+
+class WeekendPlanOut(BaseModel):
+    id: str | None = None
+    weekend_start: Date
+    items: list[WeekendWishlistItem]
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "WeekendPlanOut":
+        ws = row["weekend_start"]
+        if isinstance(ws, str):
+            ws = Date.fromisoformat(ws[:10])
+        raw_notes = row.get("notes")
+        items = _weekend_wishlist_from_notes(
+            str(raw_notes) if raw_notes is not None else None,
+        )
+        return cls(
+            id=str(row["id"]) if row.get("id") else None,
+            weekend_start=ws,
+            items=items,
+            created_at=_parse_optional_dt(row.get("created_at")),
+            updated_at=_parse_optional_dt(row.get("updated_at")),
+        )
 
 
 class RestDayBody(BaseModel):

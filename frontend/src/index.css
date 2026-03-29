@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Instrument Serif", Georgia, serif;
+}
+
 html {
   color-scheme: dark;
   scroll-behavior: smooth;
+  /* Standard document size — avoid breakpoint-based rem jumps */
+  font-size: 100%;
 }
 
 body {
@@ -10,15 +17,15 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   background-color: #030304;
-  font-family:
-    "Plus Jakarta Sans",
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 @layer utilities {
   .font-display {
-    font-family: "Instrument Serif", Georgia, serif;
+    font-family: var(--font-display);
   }
 }

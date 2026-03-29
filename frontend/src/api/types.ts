@@ -4,6 +4,10 @@ export type ApiTask = {
   id: string;
   title: string;
   created_at: string;
+  task_kind?: "daily" | "monthly";
+  month_bucket?: string | null;
+  window_start?: string | null;
+  window_end?: string | null;
 };
 
 export type ApiTaskLog = {
@@ -16,6 +20,23 @@ export type ApiDailyCompletion = {
   count: number;
   rest_marks?: number;
   global_rest?: boolean;
+};
+
+export type ApiCalendarDayTask = {
+  task_id: string;
+  title: string;
+  task_kind: "daily" | "monthly";
+  month_bucket?: string | null;
+  completed: boolean;
+  rest_today: boolean;
+  window_start?: string | null;
+  window_end?: string | null;
+};
+
+export type ApiCalendarDay = {
+  date: string;
+  global_rest: boolean;
+  tasks: ApiCalendarDayTask[];
 };
 
 export type ApiTaskStats = {
@@ -36,6 +57,20 @@ export type ApiWeeklyReview = {
   what_worked: string;
   what_to_improve: string;
   what_to_drop: string;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type ApiWeekendWishlistItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+export type ApiWeekendPlan = {
+  id: string | null;
+  weekend_start: string;
+  items: ApiWeekendWishlistItem[];
   created_at: string | null;
   updated_at: string | null;
 };

@@ -1,13 +1,17 @@
 import { getApiAccessToken } from "../lib/apiAuthBridge";
+import { firstDayOfMonthLocalISO } from "../lib/date";
 import { getSupabase } from "../lib/supabaseClient";
 import { API_BASE_URL, assertApiBaseConfigured } from "./config";
 import type {
+  ApiCalendarDay,
   ApiDailyCompletion,
   ApiRestDay,
   ApiTask,
   ApiTaskLog,
   ApiTaskStats,
   ApiWeeklyReview,
+  ApiWeekendPlan,
+  ApiWeekendWishlistItem,
 } from "./types";
 
 async function parseError(res: Response): Promise<string> {
@@ -112,17 +116,59 @@ async function requestJson<T>(
   return res.json() as Promise<T>;
 }
 
+/** GET /api/calendar/day?on=YYYY-MM-DD */
+export function getCalendarDay(on: string): Promise<ApiCalendarDay> {
+  const q = new URLSearchParams({ on });
+  return requestJson<ApiCalendarDay>(`/api/calendar/day?${q.toString()}`);
+}
+
 /** GET /api/tasks */
 export function getAllTasks(): Promise<ApiTask[]> {
   return requestJson<ApiTask[]>("/api/tasks");
 }
 
 /** POST /api/tasks */
-export function createTask(title: string): Promise<ApiTask> {
+export function createTask(
+  title: string,
+  opts?: {
+    taskKind?: "daily" | "monthly";
+    monthBucket?: string;
+    windowStart?: string | null;
+    windowEnd?: string | null;
+  },
+): Promise<ApiTask> {
+  const task_kind = opts?.taskKind ?? "daily";
+  const body: Record<string, unknown> = { title, task_kind };
+  if (task_kind === "monthly") {
+    body.month_bucket = opts?.monthBucket ?? firstDayOfMonthLocalISO();
+  } else {
+    const ws = opts?.windowStart?.trim();
+    const we = opts?.windowEnd?.trim();
+    if (ws && we) {
+      body.window_start = ws;
+      body.window_end = we;
+    }
+  }
   return requestJson<ApiTask>("/api/tasks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify(body),
+  });
+}
+
+/** PATCH /api/tasks/{task_id} */
+export function patchTask(
+  taskId: string,
+  body: {
+    title?: string;
+    window_start?: string | null;
+    window_end?: string | null;
+  },
+): Promise<ApiTask> {
+  return requestJson<ApiTask>(`/api/tasks/${encodeURIComponent(taskId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }
 
@@ -148,15 +194,38 @@ export function markTaskComplete(
   );
 }
 
-/** GET /api/stats/monthly-completions */
+type MonthlyCompletionsCalendar = {
+  year: number;
+  month: number;
+  taskKind?: "all" | "daily" | "monthly";
+};
+
+type MonthlyCompletionsWindow = {
+  from: string;
+  to: string;
+  taskKind: "all" | "daily" | "monthly";
+  monthBucket?: string;
+};
+
+/** GET /api/stats/monthly-completions — full month or from/to window + task_kind */
 export function getMonthlyCompletions(
-  year: number,
-  month: number,
+  opts: MonthlyCompletionsCalendar | MonthlyCompletionsWindow,
 ): Promise<ApiDailyCompletion[]> {
-  const q = new URLSearchParams({
-    year: String(year),
-    month: String(month),
-  });
+  const q = new URLSearchParams();
+  if ("from" in opts && "to" in opts) {
+    q.set("from", opts.from);
+    q.set("to", opts.to);
+    q.set("task_kind", opts.taskKind);
+    if (opts.monthBucket) {
+      q.set("month_bucket", opts.monthBucket);
+    }
+  } else {
+    q.set("year", String(opts.year));
+    q.set("month", String(opts.month));
+    if (opts.taskKind && opts.taskKind !== "all") {
+      q.set("task_kind", opts.taskKind);
+    }
+  }
   return requestJson<ApiDailyCompletion[]>(
     `/api/stats/monthly-completions?${q.toString()}`,
   );
@@ -205,6 +274,26 @@ export function putWeeklyReview(body: {
   what_to_drop: string;
 }): Promise<ApiWeeklyReview> {
   return requestJson<ApiWeeklyReview>("/api/weekly-review", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** GET /api/weekend-plan?weekend_start=YYYY-MM-DD (Saturday) */
+export function getWeekendPlan(weekendStart: string): Promise<ApiWeekendPlan> {
+  const q = new URLSearchParams({ weekend_start: weekendStart });
+  return requestJson<ApiWeekendPlan>(
+    `/api/weekend-plan?${q.toString()}`,
+  );
+}
+
+/** PUT /api/weekend-plan — wishlist lines (not habit tasks), stored as JSON in notes column */
+export function putWeekendPlan(body: {
+  weekend_start: string;
+  items: ApiWeekendWishlistItem[];
+}): Promise<ApiWeekendPlan> {
+  return requestJson<ApiWeekendPlan>("/api/weekend-plan", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

@@ -9,7 +9,6 @@ import {
   YAxis,
 } from "recharts";
 import { glassCard } from "../../lib/ui";
-import { SectionHeading } from "../ui/SectionHeading";
 
 export type ChartPoint = {
   label: string;
@@ -29,6 +28,10 @@ const PULSE_MAX = 90;
 const PULSE_START = 50;
 const STEP_UP = 16;
 const STEP_DOWN = 14;
+
+/** Classic rhythm line — rose accent (matches app theme). */
+const LINE_STROKE = "#fb7185";
+const LINE_ACTIVE = "#fda4af";
 
 /**
  * “Heartbeat” line: climbs on any meaningful day (done, per-task rest, or
@@ -57,10 +60,11 @@ type Props = {
   data: ChartPoint[];
   loading?: boolean;
   error?: string | null;
-  /** e.g. current month label */
   subtitle?: string;
-  /** Used so whole-day rest counts as real activity (scaled to # of habits). */
   taskCount?: number;
+  sectionTitle?: string;
+  footerNote?: string;
+  sectionHeadingId?: string;
 };
 
 export function ConsistencyGraphSection({
@@ -69,6 +73,9 @@ export function ConsistencyGraphSection({
   error,
   subtitle,
   taskCount = 1,
+  sectionTitle = "Rhythm · heartbeat (this month)",
+  footerNote,
+  sectionHeadingId = "graph-heading",
 }: Props) {
   const pulseData = useMemo(
     () => buildHeartbeatData(data, taskCount),
@@ -76,12 +83,15 @@ export function ConsistencyGraphSection({
   );
 
   return (
-    <section aria-labelledby="graph-heading">
-      <SectionHeading id="graph-heading">
-        Rhythm · heartbeat (this month)
-      </SectionHeading>
+    <section aria-labelledby={sectionHeadingId}>
+      <h4
+        id={sectionHeadingId}
+        className="mb-1.5 text-center text-xs font-semibold uppercase tracking-[0.14em] text-zinc-400 sm:text-left sm:text-sm"
+      >
+        {sectionTitle}
+      </h4>
       {subtitle && (
-        <p className="mb-3 text-center text-xs text-zinc-500 sm:text-sm">
+        <p className="mb-3 text-center text-sm text-zinc-500 sm:text-left">
           {subtitle}
         </p>
       )}
@@ -103,7 +113,7 @@ export function ConsistencyGraphSection({
           className={`${glassCard} flex min-h-[220px] flex-col items-center justify-center gap-2 border-red-500/25 bg-red-950/25 px-4 py-8 text-center text-sm text-red-200/95 sm:h-64 sm:min-h-0`}
         >
           <span className="font-medium text-red-100">Something went wrong</span>
-          <span className="max-w-sm text-xs text-red-300/75">{error}</span>
+          <span className="max-w-sm text-sm text-red-300/75">{error}</span>
         </div>
       ) : (
         <div
@@ -117,25 +127,32 @@ export function ConsistencyGraphSection({
               <CartesianGrid stroke="#27272a" strokeDasharray="3 3" />
               <XAxis
                 dataKey="label"
-                tick={{ fill: "#a1a1aa", fontSize: 10 }}
+                tick={{ fill: "#a1a1aa", fontSize: 12 }}
                 tickLine={false}
                 axisLine={{ stroke: "#3f3f46" }}
                 interval="preserveStartEnd"
+                minTickGap={24}
               />
               <YAxis
                 domain={[0, 100]}
                 allowDecimals={false}
-                tick={{ fill: "#a1a1aa", fontSize: 10 }}
+                tick={{ fill: "#a1a1aa", fontSize: 12 }}
                 tickLine={false}
                 axisLine={{ stroke: "#3f3f46" }}
                 width={32}
               />
               <Tooltip
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null;
-                  const row = payload[0]!.payload as HeartbeatRow;
+                cursor={{
+                  stroke: "#52525b",
+                  strokeWidth: 1,
+                  strokeDasharray: "4 4",
+                }}
+                content={({ active, label }) => {
+                  if (!active || label == null) return null;
+                  const row = pulseData.find((r) => r.label === label);
+                  if (!row) return null;
                   return (
-                    <div className="rounded-xl border border-zinc-600 bg-zinc-900/95 px-3 py-2 text-xs shadow-xl backdrop-blur-md">
+                    <div className="rounded-xl border border-zinc-600 bg-zinc-900/95 px-3 py-2 text-sm shadow-xl backdrop-blur-md">
                       <p className="mb-1.5 font-medium text-zinc-300">
                         Day {row.label}
                       </p>
@@ -167,12 +184,17 @@ export function ConsistencyGraphSection({
                 type="linear"
                 name="Rhythm"
                 dataKey="pulse"
-                stroke="#fb7185"
+                stroke={LINE_STROKE}
                 strokeWidth={2.5}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 dot={false}
-                activeDot={{ r: 5, fill: "#fda4af", stroke: "#fff", strokeWidth: 1 }}
+                activeDot={{
+                  r: 5,
+                  fill: LINE_ACTIVE,
+                  stroke: "#fff",
+                  strokeWidth: 1,
+                }}
                 isAnimationActive
               />
             </LineChart>
@@ -180,10 +202,13 @@ export function ConsistencyGraphSection({
         </div>
       )}
       {!loading && !error && (
-        <p className="mt-3 text-center text-xs text-zinc-500 sm:text-sm">
-          One line: it steps <span className="text-rose-300/90">up</span> when
-          anything counts — completions, per-habit rest, or whole-day rest —
-          and drifts <span className="text-zinc-400">down</span> on quiet days.
+        <p className="mt-3 text-center text-sm leading-relaxed text-zinc-500 sm:text-left">
+          {footerNote ?? (
+            <>
+              Steps up when you complete habits or log rest days in the planner;
+              drifts down on quiet days. Rest is included in these charts.
+            </>
+          )}
         </p>
       )}
     </section>

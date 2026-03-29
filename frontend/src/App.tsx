@@ -13,8 +13,10 @@ import { DeployConfigBlocker } from "./components/DeployConfigBlocker";
 import { AppShell } from "./components/layout/AppShell";
 import { PageBackdrop } from "./components/layout/PageBackdrop";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { TimeFormatProvider } from "./context/TimeFormatContext";
 import { getProductionSupabaseConfigIssues } from "./lib/publicEnv";
 import { traceAuth } from "./lib/authTrace";
+import { CalendarPage } from "./pages/CalendarPage";
 import { HomePage } from "./pages/HomePage";
 import { LegacyTaskRedirect } from "./pages/LegacyTaskRedirect";
 import { AuthPage } from "./pages/AuthPage";
@@ -109,6 +111,7 @@ function AppRoutes() {
       <Route path="/login" element={<AuthPage />} />
       <Route path="/" element={<ProtectedLayout />}>
         <Route index element={<HomePage />} />
+        <Route path="calendar" element={<CalendarPage />} />
         <Route path="tasks/:task_id" element={<TaskDetailPage />} />
         <Route path="task/:id" element={<LegacyTaskRedirect />} />
       </Route>
@@ -134,9 +137,11 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <ApiConfigBanner />
-        <AppRoutes />
-        <AuthTraceHud />
+        <TimeFormatProvider>
+          <ApiConfigBanner />
+          <AppRoutes />
+          <AuthTraceHud />
+        </TimeFormatProvider>
       </BrowserRouter>
     </AuthProvider>
   );

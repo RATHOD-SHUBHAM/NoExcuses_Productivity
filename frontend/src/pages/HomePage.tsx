@@ -1,13 +1,31 @@
-import { useCallback, useEffect, useState } from "react";
-import { AddTaskSection } from "../components/home/AddTaskSection";
-import { ConsistencyGraphSection } from "../components/home/ConsistencyGraphSection";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { CalendarView } from "../components/calendar/CalendarView";
+import { GlobalRestTodayControl } from "../components/home/GlobalRestTodayControl";
+import { UnifiedAddTaskBar } from "../components/home/UnifiedAddTaskBar";
+import { WeekendPlansSection } from "../components/home/WeekendPlansSection";
+import {
+  ConsistencyGraphSection,
+  type ChartPoint,
+} from "../components/home/ConsistencyGraphSection";
+import { ProductivitySummary } from "../components/home/ProductivitySummary";
 import { QuoteSection } from "../components/home/QuoteSection";
-import { RestDayExportSection } from "../components/home/RestDayExportSection";
 import { TaskListSection } from "../components/home/TaskListSection";
 import { WeeklyReviewSection } from "../components/home/WeeklyReviewSection";
 import * as tasksApi from "../api/tasksApi";
-import { todayLocalISO } from "../lib/date";
-import { alertError, pageContainer } from "../lib/ui";
+import {
+  firstDayOfMonthLocalISO,
+  getRhythmChartWindow,
+  todayLocalISO,
+} from "../lib/date";
+import {
+  alertError,
+  homeFeaturePanel,
+  homePanelPad,
+  pageContainerWide,
+} from "../lib/ui";
+import { SectionHeading } from "../components/ui/SectionHeading";
+import { sortDailiesByWindow } from "../lib/sortTasks";
 import type { Task } from "../types/task";
 
 function logsShowCompletedToday(
@@ -19,47 +37,110 @@ function logsShowCompletedToday(
   );
 }
 
+function countCompletedDaysInBucketMonth(
+  logs: { date: string; completed: boolean }[],
+  bucketFirstDay: string,
+): { completed: number; daysInMonth: number } {
+  const d = new Date(bucketFirstDay + "T12:00:00");
+  if (Number.isNaN(d.getTime())) {
+    return { completed: 0, daysInMonth: 30 };
+  }
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const start = `${y}-${pad(m + 1)}-01`;
+  const end = `${y}-${pad(m + 1)}-${pad(daysInMonth)}`;
+  let completed = 0;
+  for (const l of logs) {
+    if (!l.completed) continue;
+    const ds = l.date.slice(0, 10);
+    if (ds >= start && ds <= end) {
+      completed += 1;
+    }
+  }
+  return { completed, daysInMonth };
+}
+
 async function tasksWithTodayFromApi(): Promise<Task[]> {
   const list = await tasksApi.getAllTasks();
   const today = todayLocalISO();
-  let restRows: { task_id: string }[] = [];
-  try {
-    restRows = await tasksApi.listTaskRestDaysOnDate(today);
-  } catch {
-    restRows = [];
-  }
-  const restSet = new Set(restRows.map((r) => r.task_id));
   const enriched = await Promise.all(
     list.map(async (t) => {
       const logs = await tasksApi.getTaskLogs(t.id);
-      return {
+      const mb =
+        t.month_bucket != null && String(t.month_bucket).length > 0
+          ? String(t.month_bucket).slice(0, 10)
+          : null;
+      const taskKind: Task["taskKind"] =
+        t.task_kind === "monthly" ? "monthly" : "daily";
+      const ws =
+        t.window_start != null && String(t.window_start).trim()
+          ? String(t.window_start).trim()
+          : null;
+      const we =
+        t.window_end != null && String(t.window_end).trim()
+          ? String(t.window_end).trim()
+          : null;
+      const base: Task = {
         id: t.id,
         title: t.title,
         createdAt: t.created_at,
         completedToday: logsShowCompletedToday(logs, today),
-        restToday: restSet.has(t.id),
+        restToday: false,
+        taskKind,
+        monthBucket: mb,
+        windowStart: ws,
+        windowEnd: we,
       };
+      if (taskKind === "monthly" && mb) {
+        const { completed, daysInMonth } = countCompletedDaysInBucketMonth(
+          logs,
+          mb,
+        );
+        base.daysCompletedThisMonth = completed;
+        base.daysInMonth = daysInMonth;
+      }
+      return base;
     }),
   );
   return enriched;
 }
 
+function mapRowsToChartPoints(
+  rows: Awaited<ReturnType<typeof tasksApi.getMonthlyCompletions>>,
+): ChartPoint[] {
+  return rows.map((r) => ({
+    label: r.date.slice(5),
+    completed: r.count,
+    restMarks: r.rest_marks ?? 0,
+    globalRest: r.global_rest ?? false,
+  }));
+}
+
+function dailyOnlyTasks(tasks: Task[]): Task[] {
+  return tasks.filter((t) => t.taskKind === "daily");
+}
+
 export function HomePage() {
+  const [searchParams] = useSearchParams();
+  const plannerFromNav = searchParams.get("planner") === "open";
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState<string | null>(null);
 
-  const [graphPoints, setGraphPoints] = useState<
-    {
-      label: string;
-      completed: number;
-      restMarks: number;
-      globalRest: boolean;
-    }[]
-  >([]);
+  const [dailyGraphPoints, setDailyGraphPoints] = useState<ChartPoint[]>([]);
+  const [monthlyGraphPoints, setMonthlyGraphPoints] = useState<ChartPoint[]>(
+    [],
+  );
   const [graphLoading, setGraphLoading] = useState(true);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphLabel, setGraphLabel] = useState("");
+  /** Bumps ProductivitySummary when stats change but graph points look unchanged. */
+  const [habitActivityTick, setHabitActivityTick] = useState(0);
+  /** Bumps calendar month/day fetch when whole-day rest toggles from Home. */
+  const [globalRestTick, setGlobalRestTick] = useState(0);
 
   const loadTasks = useCallback(async () => {
     setTasksError(null);
@@ -77,30 +158,35 @@ export function HomePage() {
     }
   }, []);
 
-  const loadGraph = useCallback(async (options?: { silent?: boolean }) => {
+  const loadGraphs = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent === true;
     setGraphError(null);
     if (!silent) setGraphLoading(true);
     try {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1;
-      setGraphLabel(
-        `${year}-${String(month).padStart(2, "0")} (monthly)`,
-      );
-      const rows = await tasksApi.getMonthlyCompletions(year, month);
-      const points = rows.map((r) => ({
-        label: r.date.slice(5),
-        completed: r.count,
-        restMarks: r.rest_marks ?? 0,
-        globalRest: r.global_rest ?? false,
-      }));
-      setGraphPoints(points);
+      const w = getRhythmChartWindow({ daysPast: 7, daysFuture: 5 });
+      setGraphLabel(w.label);
+      const monthBucket = firstDayOfMonthLocalISO();
+      const [dailyRows, monthlyRows] = await Promise.all([
+        tasksApi.getMonthlyCompletions({
+          taskKind: "daily",
+          from: w.from,
+          to: w.to,
+        }),
+        tasksApi.getMonthlyCompletions({
+          taskKind: "monthly",
+          from: w.from,
+          to: w.to,
+          monthBucket,
+        }),
+      ]);
+      setDailyGraphPoints(mapRowsToChartPoints(dailyRows));
+      setMonthlyGraphPoints(mapRowsToChartPoints(monthlyRows));
     } catch (e) {
       setGraphError(
         e instanceof Error ? e.message : "Something went wrong",
       );
-      setGraphPoints([]);
+      setDailyGraphPoints([]);
+      setMonthlyGraphPoints([]);
     } finally {
       if (!silent) setGraphLoading(false);
     }
@@ -111,13 +197,72 @@ export function HomePage() {
   }, [loadTasks]);
 
   useEffect(() => {
-    void loadGraph();
-  }, [loadGraph]);
+    void loadGraphs();
+  }, [loadGraphs]);
 
-  async function addTask(title: string) {
+  useEffect(() => {
+    if (!plannerFromNav) {
+      return;
+    }
+    const id = window.setTimeout(() => {
+      document
+        .getElementById("calendar")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+    return () => window.clearTimeout(id);
+  }, [plannerFromNav]);
+
+  const bucket = firstDayOfMonthLocalISO();
+  const slotsPerDay = useMemo(
+    () =>
+      Math.max(
+        1,
+        dailyOnlyTasks(tasks).length +
+          tasks.filter(
+            (t) => t.taskKind === "monthly" && t.monthBucket === bucket,
+          ).length,
+      ),
+    [tasks, bucket],
+  );
+
+  const summaryRefreshKey = useMemo(
+    () =>
+      [
+        slotsPerDay,
+        dailyGraphPoints.map((p) => p.completed).join(","),
+        monthlyGraphPoints.map((p) => p.completed).join(","),
+      ].join("|"),
+    [slotsPerDay, dailyGraphPoints, monthlyGraphPoints],
+  );
+
+  const refreshHomeFromCalendar = useCallback(async () => {
+    await loadGraphs({ silent: true });
+    await loadTasks();
+    setHabitActivityTick((n) => n + 1);
+  }, [loadGraphs, loadTasks]);
+
+  /** Calendar embed does not see React state for new tasks — bump when task ids change. */
+  const calendarTasksKey = useMemo(
+    () =>
+      tasks
+        .map((t) => t.id)
+        .sort()
+        .join(","),
+    [tasks],
+  );
+
+  async function addMonthlyGoal(title: string) {
     setTasksError(null);
+    const bucket = firstDayOfMonthLocalISO();
     try {
-      const created = await tasksApi.createTask(title);
+      const created = await tasksApi.createTask(title, {
+        taskKind: "monthly",
+        monthBucket: bucket,
+      });
+      const mb =
+        created.month_bucket != null && String(created.month_bucket).length > 0
+          ? String(created.month_bucket).slice(0, 10)
+          : bucket;
       setTasks((prev) => [
         {
           id: created.id,
@@ -125,9 +270,55 @@ export function HomePage() {
           createdAt: created.created_at,
           completedToday: false,
           restToday: false,
+          taskKind: "monthly",
+          monthBucket: mb,
         },
         ...prev,
       ]);
+      await loadGraphs({ silent: true });
+      setHabitActivityTick((n) => n + 1);
+    } catch (e) {
+      setTasksError(
+        e instanceof Error ? e.message : "Something went wrong",
+      );
+    }
+  }
+
+  async function addDailyTodo(
+    title: string,
+    opts?: { windowStart?: string | null; windowEnd?: string | null },
+  ) {
+    setTasksError(null);
+    try {
+      const created = await tasksApi.createTask(title, {
+        taskKind: "daily",
+        windowStart: opts?.windowStart,
+        windowEnd: opts?.windowEnd,
+      });
+      const ws =
+        created.window_start != null && String(created.window_start).trim()
+          ? String(created.window_start).trim()
+          : null;
+      const we =
+        created.window_end != null && String(created.window_end).trim()
+          ? String(created.window_end).trim()
+          : null;
+      setTasks((prev) => [
+        {
+          id: created.id,
+          title: created.title,
+          createdAt: created.created_at,
+          completedToday: false,
+          restToday: false,
+          taskKind: "daily",
+          monthBucket: null,
+          windowStart: ws,
+          windowEnd: we,
+        },
+        ...prev,
+      ]);
+      await loadGraphs({ silent: true });
+      setHabitActivityTick((n) => n + 1);
     } catch (e) {
       setTasksError(
         e instanceof Error ? e.message : "Something went wrong",
@@ -140,7 +331,8 @@ export function HomePage() {
     try {
       await tasksApi.deleteTask(id);
       setTasks((prev) => prev.filter((t) => t.id !== id));
-      await loadGraph({ silent: true });
+      await loadGraphs({ silent: true });
+      setHabitActivityTick((n) => n + 1);
     } catch (e) {
       setTasksError(
         e instanceof Error ? e.message : "Something went wrong",
@@ -166,33 +358,8 @@ export function HomePage() {
         date: today,
         ...(next ? {} : { completed: false }),
       });
-      await loadGraph({ silent: true });
-    } catch (e) {
-      setTasks(prev);
-      setTasksError(
-        e instanceof Error ? e.message : "Something went wrong",
-      );
-    }
-  }
-
-  async function toggleRestToday(id: string) {
-    const task = tasks.find((t) => t.id === id);
-    if (!task) return;
-
-    const today = todayLocalISO();
-    const next = !task.restToday;
-    const prev = tasks;
-    setTasks((p) =>
-      p.map((t) => (t.id === id ? { ...t, restToday: next } : t)),
-    );
-
-    try {
-      if (next) {
-        await tasksApi.addTaskRestDay(id, today);
-      } else {
-        await tasksApi.deleteTaskRestDay(id, today);
-      }
-      await loadGraph({ silent: true });
+      await loadGraphs({ silent: true });
+      setHabitActivityTick((n) => n + 1);
     } catch (e) {
       setTasks(prev);
       setTasksError(
@@ -203,57 +370,158 @@ export function HomePage() {
 
   return (
     <div
-      className={`${pageContainer} flex min-h-dvh flex-col gap-10 sm:gap-12 lg:gap-14`}
+      className={`${pageContainerWide} flex min-h-dvh flex-col gap-6 sm:gap-7 lg:gap-8`}
     >
-      <header className="text-center">
-        <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-rose-300/90 shadow-lg shadow-rose-950/20 backdrop-blur-md sm:text-[11px]">
-          Habit tracker
-        </p>
-        <h1 className="bg-gradient-to-br from-white via-white to-zinc-400 bg-clip-text font-display text-4xl font-normal italic leading-tight tracking-tight text-transparent sm:text-5xl sm:leading-[1.1]">
-          No
-          <span className="not-italic">
-            <span className="bg-gradient-to-r from-rose-400 via-rose-300 to-amber-200 bg-clip-text font-sans text-[0.92em] font-bold tracking-tight text-transparent">
-              Excuses
-            </span>
-          </span>
-        </h1>
-        <p className="mx-auto mt-3 max-w-md text-pretty text-sm text-zinc-400 sm:text-base">
-          Stay consistent. One screen, no clutter.
-        </p>
+      <header className="border-b border-white/[0.06] pb-6 sm:pb-8">
+        <div className="flex flex-col gap-4 sm:gap-5 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
+          <div className="text-center lg:text-left">
+            <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-gradient-to-r from-white/[0.07] to-white/[0.03] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-rose-300/90 shadow-[0_8px_32px_-12px_rgba(244,63,94,0.35)] backdrop-blur-md sm:text-sm">
+              Habits & accountability
+            </p>
+            <h1 className="bg-gradient-to-br from-white via-white to-zinc-400 bg-clip-text font-display text-4xl font-normal italic leading-tight tracking-tight text-transparent sm:text-5xl sm:leading-[1.1]">
+              No
+              <span className="not-italic">
+                <span className="bg-gradient-to-r from-rose-400 via-rose-300 to-amber-200 bg-clip-text font-sans text-[0.92em] font-bold tracking-tight text-transparent">
+                  Excuses
+                </span>
+              </span>
+            </h1>
+          </div>
+          <p className="max-w-lg text-pretty text-center text-sm leading-relaxed text-zinc-400 lg:max-w-md lg:text-right lg:text-base">
+            Build habits you can see, plan what actually matters, and stay
+            consistent — without the noise.
+          </p>
+        </div>
       </header>
 
       {tasksError && (
         <div role="alert" className={alertError}>
           <p className="font-medium text-red-100">Something went wrong</p>
-          <p className="mt-1 text-xs text-red-200/80">{tasksError}</p>
+          <p className="mt-1 text-sm text-red-200/80">{tasksError}</p>
         </div>
       )}
 
-      <QuoteSection />
+      <QuoteSection compact />
 
-      <TaskListSection
-        tasks={tasks}
-        loading={tasksLoading}
-        onToggleComplete={toggleComplete}
-        onToggleRestToday={toggleRestToday}
-        onDelete={deleteTask}
-      />
+      {/* Main dashboard: work column + sticky planner */}
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-12 lg:gap-8">
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
+          <UnifiedAddTaskBar
+            onAddDaily={addDailyTodo}
+            onAddMonthly={addMonthlyGoal}
+            disabled={tasksLoading}
+            compact
+          />
 
-      <AddTaskSection onAdd={addTask} disabled={tasksLoading} />
+          <div className={`${homeFeaturePanel} ${homePanelPad}`}>
+            <SectionHeading id="check-in-heading">Check in</SectionHeading>
+            <div className="mb-5">
+              <GlobalRestTodayControl
+                disabled={tasksLoading}
+                onChanged={async () => {
+                  await refreshHomeFromCalendar();
+                  setGlobalRestTick((n) => n + 1);
+                }}
+              />
+            </div>
+            <div className="grid gap-5 sm:gap-6 md:grid-cols-2 md:items-start">
+              <TaskListSection
+                sectionHeadingId="monthly-goals-heading"
+                sectionTitle="Monthly"
+                emptyHint="Add a monthly goal above."
+                showKindBadge={false}
+                showCompleteCheckbox={false}
+                tasks={tasks.filter(
+                  (t) =>
+                    t.taskKind === "monthly" && t.monthBucket === bucket,
+                )}
+                loading={tasksLoading}
+                onToggleComplete={toggleComplete}
+                onDelete={deleteTask}
+              />
+              <TaskListSection
+                sectionHeadingId="daily-todos-heading"
+                sectionTitle="Daily"
+                emptyHint="Add a daily habit above."
+                showKindBadge
+                tasks={sortDailiesByWindow(dailyOnlyTasks(tasks))}
+                loading={tasksLoading}
+                onToggleComplete={toggleComplete}
+                onDelete={deleteTask}
+              />
+            </div>
+          </div>
 
-      <WeeklyReviewSection />
+          <ProductivitySummary
+            slotsPerDay={slotsPerDay}
+            refreshKey={`${summaryRefreshKey}|${habitActivityTick}`}
+            compact
+          />
+        </div>
 
-      <RestDayExportSection
-        onRestDayChanged={() => void loadGraph({ silent: true })}
-      />
+        <aside
+          id="calendar"
+          className={`scroll-mt-24 lg:col-span-5 lg:sticky lg:top-6 lg:self-start ${homeFeaturePanel} ${homePanelPad} space-y-3`}
+        >
+          <SectionHeading id="home-calendar-heading">Calendar</SectionHeading>
+          <CalendarView
+            collapsible
+            initialExpanded={plannerFromNav}
+            showHero={false}
+            formIdSuffix="-home"
+            hideDayAddTask
+            hideDayTaskList
+            hideGlobalRest
+            tasksRefreshKey={`${calendarTasksKey}|${globalRestTick}`}
+            onHabitDataChanged={refreshHomeFromCalendar}
+          />
+          <div className="pt-4 border-t border-white/[0.06]">
+            <WeekendPlansSection />
+          </div>
+        </aside>
+      </div>
 
-      <ConsistencyGraphSection
-        data={graphPoints}
-        loading={graphLoading}
-        error={graphError}
-        subtitle={graphLabel}
-        taskCount={Math.max(tasks.length, 1)}
-      />
+      <div className={`space-y-4 ${homeFeaturePanel} ${homePanelPad}`}>
+        <div>
+          <SectionHeading id="report-heading">Report</SectionHeading>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start lg:gap-6">
+          <ConsistencyGraphSection
+            sectionHeadingId="monthly-rhythm-heading"
+            sectionTitle="Monthly"
+            data={monthlyGraphPoints}
+            loading={graphLoading}
+            error={graphError}
+            subtitle={graphLabel}
+            taskCount={Math.max(
+              tasks.filter(
+                (t) =>
+                  t.taskKind === "monthly" &&
+                  t.monthBucket === bucket,
+              ).length,
+              1,
+            )}
+            footerNote="Monthly goals: completions and rest in this window."
+          />
+          <ConsistencyGraphSection
+            sectionHeadingId="daily-rhythm-heading"
+            sectionTitle="Daily"
+            data={dailyGraphPoints}
+            loading={graphLoading}
+            error={graphError}
+            subtitle={graphLabel}
+            taskCount={Math.max(
+              tasks.filter((t) => t.taskKind === "daily").length,
+              1,
+            )}
+            footerNote="Daily habits: completions and rest in this window."
+          />
+        </div>
+      </div>
+
+      <div className={`${homeFeaturePanel} ${homePanelPad}`}>
+        <WeeklyReviewSection />
+      </div>
     </div>
   );
 }

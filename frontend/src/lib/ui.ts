@@ -3,8 +3,19 @@
 export const pageContainer =
   "relative mx-auto w-full max-w-2xl px-4 py-8 pb-24 sm:px-6 sm:py-10 md:max-w-3xl lg:max-w-4xl lg:px-8 lg:py-12 lg:pb-28";
 
+/** Home dashboard — room for two columns without squeezing titles. */
+export const pageContainerWide =
+  "relative mx-auto w-full max-w-2xl px-4 py-8 pb-24 sm:px-6 sm:py-10 md:max-w-3xl lg:max-w-6xl xl:max-w-7xl lg:px-8 lg:py-12 lg:pb-28";
+
+/** Lifted panel for major home sections (calendar, rhythm). */
+export const homeFeaturePanel =
+  "rounded-[1.75rem] border border-white/[0.07] bg-gradient-to-b from-zinc-900/45 via-zinc-950/40 to-zinc-950/70 shadow-[0_40px_80px_-40px_rgba(0,0,0,0.75)] ring-1 ring-white/[0.05] backdrop-blur-md";
+
+/** Tighter inset for home panels (less vertical bulk). */
+export const homePanelPad = "p-4 sm:p-5 lg:px-6 lg:py-5";
+
 export const sectionTitle =
-  "mb-3 flex items-center gap-2.5 text-[10px] font-bold uppercase tracking-[0.28em] text-rose-400/95 sm:text-xs";
+  "mb-3 flex items-center gap-2.5 text-[11px] font-bold uppercase tracking-[0.24em] text-rose-400/95 sm:text-xs";
 
 export const sectionTitleRule =
   "h-px w-5 shrink-0 rounded-full bg-gradient-to-r from-rose-500 to-rose-500/0 sm:w-8";

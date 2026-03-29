@@ -5,12 +5,19 @@ import { WeeklyHeatmapStrip } from "../components/heatmaps/WeeklyHeatmapStrip";
 import * as tasksApi from "../api/tasksApi";
 import type { ApiTaskLog, ApiTaskStats } from "../api/types";
 import {
+  formatMonthYearFromBucket,
   inclusiveLocalRange,
   localDateKeyFromIso,
   todayLocalISO,
 } from "../lib/date";
 import { SectionHeading } from "../components/ui/SectionHeading";
-import { alertError, glassCard, pageContainer } from "../lib/ui";
+import { PlannedTimeInputs } from "../components/ui/PlannedTimeInputs";
+import {
+  alertError,
+  glassCard,
+  glassCardSubtle,
+  pageContainer,
+} from "../lib/ui";
 import { heatmapAccentForTask } from "../lib/heatmapAccent";
 import {
   contributionWeekColumns,
@@ -42,13 +49,15 @@ export function TaskDetailPage() {
 
   const [title, setTitle] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [taskKind, setTaskKind] = useState<"daily" | "monthly">("daily");
+  const [monthBucket, setMonthBucket] = useState<string | null>(null);
   const [logs, setLogs] = useState<ApiTaskLog[]>([]);
   const [stats, setStats] = useState<ApiTaskStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  /** Whole-day rest (home “Rest & data”) — drives heatmap only. */
+  /** Whole-day rest from the calendar / API — drives heatmap. */
   const [globalRestKeys, setGlobalRestKeys] = useState<Set<string>>(
     () => new Set(),
   );
@@ -56,6 +65,9 @@ export function TaskDetailPage() {
   const [perTaskRestKeys, setPerTaskRestKeys] = useState<Set<string>>(
     () => new Set(),
   );
+  const [windowStartEdit, setWindowStartEdit] = useState("");
+  const [windowEndEdit, setWindowEndEdit] = useState("");
+  const [windowSaving, setWindowSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!task_id) {
@@ -75,6 +87,8 @@ export function TaskDetailPage() {
         setNotFound(true);
         setTitle(null);
         setCreatedAt(null);
+        setTaskKind("daily");
+        setMonthBucket(null);
         setLogs([]);
         setStats(null);
         setGlobalRestKeys(new Set());
@@ -83,6 +97,22 @@ export function TaskDetailPage() {
       }
       setTitle(task.title);
       setCreatedAt(task.created_at);
+      setTaskKind(task.task_kind === "monthly" ? "monthly" : "daily");
+      setMonthBucket(
+        task.month_bucket != null && String(task.month_bucket).length > 0
+          ? String(task.month_bucket).slice(0, 10)
+          : null,
+      );
+      setWindowStartEdit(
+        task.window_start != null && String(task.window_start).trim()
+          ? String(task.window_start).trim().slice(0, 5)
+          : "",
+      );
+      setWindowEndEdit(
+        task.window_end != null && String(task.window_end).trim()
+          ? String(task.window_end).trim().slice(0, 5)
+          : "",
+      );
 
       const todayStr = todayLocalISO();
       const createdLocal = localDateKeyFromIso(task.created_at);
@@ -240,6 +270,32 @@ export function TaskDetailPage() {
 
   const busy = loading || actionLoading;
 
+  async function handleSaveWindow() {
+    if (!task_id || taskKind !== "daily") return;
+    const ws = windowStartEdit.trim();
+    const we = windowEndEdit.trim();
+    if ((ws && !we) || (!ws && we)) {
+      setError("Set both start and end time, or clear both fields.");
+      return;
+    }
+    if (ws && we && ws >= we) {
+      setError("End time must be after start.");
+      return;
+    }
+    setError(null);
+    setWindowSaving(true);
+    try {
+      await tasksApi.patchTask(task_id, {
+        window_start: ws && we ? ws : null,
+        window_end: ws && we ? we : null,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save window");
+    } finally {
+      setWindowSaving(false);
+    }
+  }
+
   return (
     <div
       className={`${pageContainer} flex min-h-dvh flex-col gap-8 sm:gap-10 lg:gap-12`}
@@ -285,6 +341,39 @@ export function TaskDetailPage() {
             <h1 className="text-balance bg-gradient-to-br from-white to-zinc-300 bg-clip-text text-2xl font-bold tracking-tight text-transparent sm:text-3xl">
               {title}
             </h1>
+            {taskKind === "monthly" && monthBucket ? (
+              <p className="text-sm text-rose-200/85">
+                Monthly goal · {formatMonthYearFromBucket(monthBucket)}
+              </p>
+            ) : null}
+            {taskKind === "daily" ? (
+              <div
+                className={`${glassCardSubtle} flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap sm:items-end`}
+              >
+                <div>
+                  <p className="mb-2 text-sm text-zinc-400">
+                    Planned window (optional)
+                  </p>
+                  <PlannedTimeInputs
+                    startId="task-window-start"
+                    endId="task-window-end"
+                    startValue={windowStartEdit}
+                    endValue={windowEndEdit}
+                    onStartChange={setWindowStartEdit}
+                    onEndChange={setWindowEndEdit}
+                    disabled={busy || windowSaving}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveWindow()}
+                  disabled={busy || windowSaving}
+                  className="min-h-10 shrink-0 rounded-xl border border-white/10 bg-white/[0.06] px-4 text-sm font-medium text-zinc-100 transition hover:bg-white/10 disabled:opacity-50"
+                >
+                  {windowSaving ? "Saving…" : "Save window"}
+                </button>
+              </div>
+            ) : null}
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <label className="inline-flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-white/[0.08] bg-zinc-900/50 px-4 py-3 shadow-inner shadow-black/20 backdrop-blur-md has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 sm:min-h-0 sm:py-2.5">
                 <input

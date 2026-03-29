@@ -1,5 +1,31 @@
 # NoExcuses Productivity
 
+## Live app
+
+| | URL |
+|---|-----|
+| **Frontend (Vercel)** | [https://noexcuses-zeta.vercel.app/login](https://noexcuses-zeta.vercel.app/login) |
+| **Backend API (Render)** | [https://noexcuses-productivity.onrender.com](https://noexcuses-productivity.onrender.com) |
+
+Open the Vercel link to use the app. **New user?** Use **sign up** with your email and password. **Returning?** Use **sign in**. The app uses Supabase Auth; confirm your email if your Supabase project requires it.
+
+
+## Screenshots
+
+Add images under `docs/images/` (create the folder if needed), then embed them in this section. Example markdown once files exist:
+
+```markdown
+![Dashboard](docs/images/dashboard.png)
+![Tasks and streaks](docs/images/tasks.png)
+```
+
+<!--
+Uncomment and adjust paths when screenshots are ready:
+
+![NoExcuses — dashboard](docs/images/dashboard.png)
+![NoExcuses — tasks](docs/images/tasks.png)
+-->
+
 ## Description
 
 NoExcuses is a habit and productivity tracker: **per-account** data with **Supabase Auth** (email/password), tasks with daily completion logs, streaks and stats, weekly reviews (saved in the database with history and export), global and per-task rest days, and CSV/JSON export. The app is a **React (Vite) frontend** and a **FastAPI backend** backed by **Supabase (PostgreSQL)** and row-level security.
@@ -21,7 +47,7 @@ You need:
 2. **Python 3.12+** and **[uv](https://docs.astral.sh/uv/)** for the backend (see `.python-version` for a suggested local version).
 3. A **Supabase** project and API keys.
 
-Clone the repository, configure environment variables, apply SQL migrations in Supabase, then run the API and the dev server (see **Installation** and **Executing**).
+Clone the repository, configure environment variables, apply SQL migrations in Supabase, then run the API and the dev server (see **Installation** and **Run locally**).
 
 ## Dependencies
 
@@ -82,27 +108,29 @@ Never commit real `.env` files or keys.
 | `VITE_API_BASE_URL` | `frontend/.env` or Vercel | Public API URL, **no trailing slash**. Defaults to local dev URL when unset. |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | `frontend/.env` or Vercel | Same project as above; used for sign-in and session. |
 
-## Executing
+## Run locally
 
-### API (development)
+After **Installation**—including copying `.env.example` to `.env` at the repo root and applying **Database (Supabase)** migrations—run the API and the frontend in **two terminals** from the repository root.
 
-From the **repository root**:
+1. **API (terminal 1)**
 
-```bash
-uv run --package noexcuses-backend uvicorn noexcuses_backend.main:app --reload
-```
+   ```bash
+   uv run --package noexcuses-backend uvicorn noexcuses_backend.main:app --reload
+   ```
 
-- API: `http://127.0.0.1:8000/`
-- Interactive docs: `http://127.0.0.1:8000/docs`
+   - API: `http://127.0.0.1:8000/`
+   - Interactive docs: `http://127.0.0.1:8000/docs`
 
-### Frontend (development)
+2. **Frontend (terminal 2)**
 
-```bash
-cd frontend
-npm run dev
-```
+   ```bash
+   cd frontend
+   npm run dev
+   ```
 
-Open `http://localhost:5173/` in the browser.
+3. Open **`http://localhost:5173/`** in the browser.
+
+   Keep **`VITE_API_BASE_URL=http://127.0.0.1:8000`** in your root `.env` (as in `.env.example`) so the browser calls your local API, not production.
 
 ### Production build (frontend)
 
@@ -121,6 +149,9 @@ In the Supabase SQL editor, run scripts **in order** from `backend/sql/`:
 3. **`003_productivity_features.sql`** — `weekly_reviews`, `rest_days`, RLS
 4. **`004_task_rest_days.sql`** — per-task rest marks and related features
 5. **`005_user_isolation.sql`** — **per-user** columns and RLS (`user_id`, composite keys). **Truncates** all habit/review/rest data. Enable **Email** (or your provider) under **Authentication → Providers** before users sign up.
+6. **`006_task_kinds.sql`** — `task_kind` (`daily` | `monthly`) and `month_bucket` on `tasks` for monthly goals vs daily todos.
+7. **`007_task_time_windows.sql`** — `window_start` / `window_end` on `tasks` (optional HH:MM windows for daily habits). Required for task create/update that sets time windows.
+8. **`008_weekend_plans.sql`** — `weekend_plans` (optional notes for an upcoming weekend, keyed by Saturday). Required for the **This weekend** block on Home.
 
 Optional: **`001_task_logs_unique_task_date.sql`** only if your `task_logs` table was created without the unique constraint.
 
@@ -130,9 +161,9 @@ Typical flow: deploy the **backend first**, copy its public URL, then deploy the
 
 ### Prerequisite: Supabase
 
-- Run all SQL migrations through **`005_user_isolation.sql`** (see **Database (Supabase)** below).
+- Run all SQL migrations through **`008_weekend_plans.sql`** (see **Database (Supabase)** below).
 - **Authentication → Providers:** enable **Email** (or your provider).
-- **Authentication → URL configuration:** add your production site URL when you have it, e.g. `https://your-project.vercel.app` (for redirects / email links if you use them).
+- **Authentication → URL configuration:** add your production site URL for redirects / email links, e.g. `https://noexcuses-zeta.vercel.app`.
 
 ### 1. Render (FastAPI)
 
@@ -150,9 +181,9 @@ Typical flow: deploy the **backend first**, copy its public URL, then deploy the
    | `SUPABASE_URL` | `https://YOUR_REF.supabase.co` |
    | `SUPABASE_KEY` | **Anon / publishable** key (`sb_publishable_…`). **Not** the service_role JWT. |
    | `SUPABASE_JWT_SECRET` | JWT secret from Supabase **Project Settings → API** (still required for HS256; JWKS is used for RS256). |
-   | `CORS_ORIGINS` | Your Vercel origin after step 2, e.g. `https://your-project.vercel.app`. You can add more comma-separated. |
+   | `CORS_ORIGINS` | Your Vercel origin, e.g. `https://noexcuses-zeta.vercel.app` (comma-separated if you add more). |
 
-5. **Create Web Service** and wait for deploy. Copy the URL, e.g. `https://noexcuses-api.onrender.com`.
+5. **Create Web Service** and wait for deploy. Example service URL: `https://noexcuses-productivity.onrender.com`.
 
 **Optional:** **New → Blueprint** and point at `render.yaml` in the repo, then add the same env vars in the dashboard.
 
@@ -165,11 +196,11 @@ Typical flow: deploy the **backend first**, copy its public URL, then deploy the
 
    | Key | Value |
    |-----|--------|
-   | `VITE_API_BASE_URL` | Your Render URL, e.g. `https://noexcuses-api.onrender.com` (**no** trailing `/`). |
+   | `VITE_API_BASE_URL` | Your Render URL, e.g. `https://noexcuses-productivity.onrender.com` (**no** trailing `/`). |
    | `VITE_SUPABASE_URL` | Same as `SUPABASE_URL`. |
    | `VITE_SUPABASE_ANON_KEY` | Same publishable/anon key as `SUPABASE_KEY` on Render. |
 
-5. **Deploy.** Open the `.vercel.app` URL and sign in.
+5. **Deploy.** Open [the app](https://noexcuses-zeta.vercel.app/login) and sign in.
 
 **Note:** Vite bakes `VITE_*` in at **build time**. After changing any of them, trigger a **Redeploy** on Vercel.
 

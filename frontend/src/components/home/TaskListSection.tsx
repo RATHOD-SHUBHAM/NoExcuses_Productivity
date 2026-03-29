@@ -1,91 +1,152 @@
 import { Link } from "react-router-dom";
+import { useTimeFormat } from "../../context/TimeFormatContext";
+import { formatTimeWindowLabel } from "../../lib/timeWindow";
 import { glassCard } from "../../lib/ui";
 import type { Task } from "../../types/task";
-import { SectionHeading } from "../ui/SectionHeading";
 
 type Props = {
   tasks: Task[];
   loading?: boolean;
   onToggleComplete: (id: string) => void | Promise<void>;
-  onToggleRestToday: (id: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
+  sectionHeadingId: string;
+  sectionTitle: string;
+  sectionDescription?: string;
+  emptyHint: string;
+  showKindBadge?: boolean;
+  /** When false, no per-day checkbox (e.g. monthly goals — log days on calendar / task page). */
+  showCompleteCheckbox?: boolean;
 };
 
 export function TaskListSection({
   tasks,
   loading,
   onToggleComplete,
-  onToggleRestToday,
   onDelete,
+  sectionHeadingId,
+  sectionTitle,
+  sectionDescription,
+  emptyHint,
+  showKindBadge = false,
+  showCompleteCheckbox = true,
 }: Props) {
+  const { timeFormat } = useTimeFormat();
+
   return (
-    <section aria-labelledby="tasks-heading">
-      <SectionHeading id="tasks-heading">Tasks</SectionHeading>
+    <section aria-labelledby={sectionHeadingId}>
+      <h3
+        id={sectionHeadingId}
+        className="mb-2 text-base font-semibold tracking-tight text-zinc-100"
+      >
+        {sectionTitle}
+      </h3>
+      {sectionDescription ? (
+        <p className="mb-4 max-w-prose text-sm leading-relaxed text-zinc-500">
+          {sectionDescription}
+        </p>
+      ) : null}
       {loading ? (
         <p
-          className={`${glassCard} py-10 text-center text-sm text-zinc-400`}
+          className={`${glassCard} py-8 text-center text-sm text-zinc-400`}
         >
           <span className="inline-flex items-center gap-2">
             <span
               className="inline-block size-4 animate-spin rounded-full border-2 border-zinc-600 border-t-rose-400"
               aria-hidden
             />
-            Loading tasks…
+            Loading…
           </span>
         </p>
       ) : tasks.length === 0 ? (
         <p
-          className={`${glassCard} border-dashed border-white/15 py-10 text-center text-sm text-zinc-400`}
+          className={`${glassCard} border-dashed border-white/10 py-8 text-center text-sm text-zinc-500`}
         >
-          No tasks yet. Add one below — stay focused.
+          {emptyHint}
         </p>
       ) : (
-        <ul className="flex flex-col gap-2.5 sm:gap-2">
+        <ul className="flex flex-col gap-1.5">
           {tasks.map((task) => (
             <li
               key={task.id}
-              className={`${glassCard} flex flex-col gap-3 py-3 !shadow-lg transition hover:border-white/12 hover:shadow-xl sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3 sm:gap-y-2 sm:py-2.5`}
+              className={`${glassCard} !p-0 !shadow-md transition hover:border-white/10 hover:!shadow-lg`}
             >
-              <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
-                <input
-                  type="checkbox"
-                  checked={task.completedToday}
-                  onChange={() => {
-                    void onToggleComplete(task.id);
-                  }}
-                  disabled={loading}
-                  aria-label={`${task.completedToday ? "Uncheck" : "Mark"} "${task.title}" for today`}
-                  className="mt-0.5 size-5 shrink-0 rounded border-zinc-500 bg-zinc-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/40 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-60 sm:mt-0 sm:size-4"
-                />
-                <Link
-                  to={`/tasks/${task.id}`}
-                  className="min-w-0 flex-1 text-left text-sm font-medium leading-snug text-white transition hover:text-rose-200 sm:truncate"
-                >
-                  {task.title}
-                </Link>
-              </div>
-              <div className="flex flex-col gap-2 sm:ml-auto sm:flex-row sm:items-center sm:gap-2">
-                <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-xs font-medium text-amber-100/90 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 sm:min-h-0 sm:py-1.5">
-                  <input
-                    type="checkbox"
-                    checked={task.restToday}
-                    onChange={() => {
-                      void onToggleRestToday(task.id);
-                    }}
-                    disabled={loading}
-                    aria-label={`${task.restToday ? "Remove" : "Mark"} rest day for "${task.title}" (this habit only)`}
-                    className="size-4 shrink-0 rounded border-amber-600/60 bg-zinc-950 text-amber-500 focus:ring-2 focus:ring-amber-500/35 focus:ring-offset-0"
-                  />
-                  <span className="select-none">Rest today</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => onDelete(task.id)}
-                  className="min-h-10 shrink-0 self-start rounded-lg border border-red-500/20 bg-red-950/30 px-3 py-2 text-xs font-semibold text-red-300 transition hover:border-red-400/40 hover:bg-red-950/60 sm:min-h-0 sm:self-auto sm:border-transparent sm:bg-transparent sm:px-2.5 sm:py-1.5 sm:hover:bg-red-950/50"
-                  aria-label={`Delete ${task.title}`}
-                >
-                  Delete
-                </button>
+              <div className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-3 sm:py-2.5 sm:pl-3 sm:pr-2">
+                <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+                  {showCompleteCheckbox ? (
+                    <input
+                      type="checkbox"
+                      checked={task.completedToday}
+                      onChange={() => {
+                        void onToggleComplete(task.id);
+                      }}
+                      disabled={loading}
+                      aria-label={`${task.completedToday ? "Uncheck" : "Mark"} "${task.title}" for today`}
+                      className="mt-0.5 size-[1.125rem] shrink-0 rounded border-zinc-500 bg-zinc-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/35 focus:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-60 sm:mt-0"
+                    />
+                  ) : (
+                    <span
+                      className="mt-0.5 size-[1.125rem] shrink-0 rounded-full border border-rose-400/35 bg-rose-500/10 shadow-[0_0_12px_-4px_rgba(244,63,94,0.35)]"
+                      aria-hidden
+                      title="Monthly goal — log days on the calendar or task page"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <Link
+                        to={`/tasks/${task.id}`}
+                        className="min-w-0 flex-1 text-base font-medium leading-snug text-white [overflow-wrap:anywhere] hover:text-rose-200/95"
+                      >
+                        {task.title}
+                      </Link>
+                      {showKindBadge ? (
+                        <span
+                          className={
+                            task.taskKind === "monthly"
+                              ? "shrink-0 rounded border border-rose-500/25 bg-rose-950/45 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-rose-100/90"
+                              : "shrink-0 rounded border border-zinc-600/45 bg-zinc-800/55 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-zinc-300"
+                          }
+                        >
+                          {task.taskKind === "monthly" ? "Month" : "Daily"}
+                        </span>
+                      ) : null}
+                    </div>
+                    {task.taskKind === "daily" &&
+                    formatTimeWindowLabel(
+                      task.windowStart,
+                      task.windowEnd,
+                      timeFormat,
+                    ) ? (
+                      <p className="mt-1 text-xs tabular-nums text-cyan-400/90">
+                        {formatTimeWindowLabel(
+                          task.windowStart,
+                          task.windowEnd,
+                          timeFormat,
+                        )}
+                      </p>
+                    ) : null}
+                    {!showCompleteCheckbox &&
+                    task.taskKind === "monthly" &&
+                    task.daysCompletedThisMonth != null &&
+                    task.daysInMonth != null ? (
+                      <p className="mt-1.5 text-sm leading-snug text-zinc-500">
+                        <span className="font-medium text-zinc-400">
+                          {task.daysCompletedThisMonth}
+                        </span>
+                        /{task.daysInMonth} days this month
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center justify-end sm:pl-1">
+                  <button
+                    type="button"
+                    onClick={() => onDelete(task.id)}
+                    className="rounded-md px-2 py-1 text-sm font-medium text-zinc-500 transition hover:bg-red-950/40 hover:text-red-300"
+                    aria-label={`Remove ${task.title}`}
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
             </li>
           ))}

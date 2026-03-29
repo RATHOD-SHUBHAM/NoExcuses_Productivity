@@ -1,10 +1,11 @@
 import csv
 import logging
+import re
 from calendar import monthrange
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from io import StringIO
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
@@ -13,6 +14,8 @@ from postgrest.exceptions import APIError
 from supabase import Client
 
 from noexcuses_backend.schemas import (
+    CalendarDayOut,
+    CalendarDayTaskOut,
     CompleteBody,
     DailyCompletion,
     RestDayBody,
@@ -20,10 +23,14 @@ from noexcuses_backend.schemas import (
     TaskCreate,
     TaskLogOut,
     TaskOut,
+    TaskUpdate,
     TaskRestDayOut,
     TaskStatsOut,
     WeeklyReviewOut,
     WeeklyReviewUpsert,
+    WeekendPlanOut,
+    WeekendPlanUpsert,
+    weekend_notes_json_from_items,
 )
 from noexcuses_backend.services import stats as stats_svc
 from noexcuses_backend.deps import get_supabase_user
@@ -31,6 +38,52 @@ from noexcuses_backend.supabase_client import run_query
 
 router = APIRouter(prefix="/api", tags=["api"])
 _log = logging.getLogger(__name__)
+
+_HHMM_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+def _coerce_hhmm(value: str | None) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if not _HHMM_RE.match(s):
+        raise HTTPException(
+            status_code=400,
+            detail="Window times must be HH:MM in 24h (e.g. 09:00, 17:30).",
+        )
+    return s
+
+
+def _daily_window_pair(
+    start: str | None,
+    end: str | None,
+) -> tuple[str | None, str | None]:
+    cs = _coerce_hhmm(start)
+    ce = _coerce_hhmm(end)
+    if cs is None and ce is None:
+        return None, None
+    if cs is None or ce is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide both window_start and window_end, or omit both.",
+        )
+    if cs >= ce:
+        raise HTTPException(
+            status_code=400,
+            detail="window_end must be after window_start (same calendar day).",
+        )
+    return cs, ce
+
+
+def _row_hhmm(row: dict[str, Any], key: str) -> str | None:
+    v = row.get(key)
+    if v is None:
+        return None
+    if isinstance(v, str) and v.strip():
+        return v.strip()
+    return None
 
 _RLS_HELP = (
     "Row-level security blocked this operation. Ensure the request sends a valid "
@@ -91,6 +144,23 @@ def _is_task_rest_days_table_missing(exc: APIError) -> bool:
         or "does not exist" in blob
         or "undefined_table" in blob
     )
+
+
+def _task_kind_from_row(row: dict[str, Any]) -> str:
+    return "monthly" if row.get("task_kind") == "monthly" else "daily"
+
+
+def _month_bucket_iso(row: dict[str, Any]) -> str | None:
+    mb = row.get("month_bucket")
+    if mb is None:
+        return None
+    if isinstance(mb, str):
+        return mb[:10]
+    if isinstance(mb, datetime):
+        return mb.date().isoformat()
+    if isinstance(mb, date) and not isinstance(mb, datetime):
+        return mb.isoformat()
+    return None
 
 
 def _parse_date_cell(value: Any) -> date:
@@ -170,9 +240,34 @@ def create_task(
     body: TaskCreate,
     db: Annotated[Client, Depends(get_supabase_user)],
 ) -> TaskOut:
-    # DB sets id + created_at (default now())
+    title = body.title.strip()
+    if body.task_kind == "monthly":
+        if body.window_start is not None or body.window_end is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Time windows apply to daily habits only.",
+            )
+        if body.month_bucket is None:
+            raise HTTPException(
+                status_code=400,
+                detail="month_bucket (first day of the month) is required for monthly goals",
+            )
+        row = {
+            "title": title,
+            "task_kind": "monthly",
+            "month_bucket": body.month_bucket.isoformat(),
+        }
+    else:
+        ws, we = _daily_window_pair(body.window_start, body.window_end)
+        row = {
+            "title": title,
+            "task_kind": "daily",
+            "month_bucket": None,
+            "window_start": ws,
+            "window_end": we,
+        }
     try:
-        res = run_query(lambda: db.table("tasks").insert({"title": body.title.strip()}))
+        res = run_query(lambda: db.table("tasks").insert(row))
     except APIError as e:
         _http_from_api_error(e)
     if not res.data:
@@ -185,6 +280,53 @@ def list_tasks(db: Annotated[Client, Depends(get_supabase_user)]) -> list[TaskOu
     res = run_query(lambda: db.table("tasks").select("*").order("created_at", desc=True))
     rows = res.data or []
     return [TaskOut.from_row(r) for r in rows]
+
+
+@router.patch("/tasks/{task_id}", response_model=TaskOut)
+def patch_task(
+    task_id: str,
+    body: TaskUpdate,
+    db: Annotated[Client, Depends(get_supabase_user)],
+) -> TaskOut:
+    res = run_query(lambda: db.table("tasks").select("*").eq("id", task_id).limit(1))
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Task not found")
+    row0 = res.data[0]
+    kind = _task_kind_from_row(row0)
+    data = body.model_dump(exclude_unset=True)
+    patch: dict[str, Any] = {}
+
+    if "title" in data and data["title"] is not None:
+        t = str(data["title"]).strip()
+        if not t:
+            raise HTTPException(status_code=400, detail="Title cannot be empty")
+        patch["title"] = t
+
+    if kind == "monthly" and ("window_start" in data or "window_end" in data):
+        raise HTTPException(
+            status_code=400,
+            detail="Time windows apply to daily habits only.",
+        )
+
+    if kind == "daily" and ("window_start" in data or "window_end" in data):
+        ns = data["window_start"] if "window_start" in data else _row_hhmm(row0, "window_start")
+        ne = data["window_end"] if "window_end" in data else _row_hhmm(row0, "window_end")
+        cs, ce = _daily_window_pair(ns, ne)
+        patch["window_start"] = cs
+        patch["window_end"] = ce
+
+    if not patch:
+        return TaskOut.from_row(row0)
+
+    try:
+        upd = run_query(
+            lambda: db.table("tasks").update(patch).eq("id", task_id),
+        )
+    except APIError as e:
+        _http_from_api_error(e)
+    if not upd.data:
+        raise HTTPException(status_code=500, detail="Failed to update task")
+    return TaskOut.from_row(upd.data[0])
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
@@ -278,21 +420,75 @@ def monthly_completions(
     db: Annotated[Client, Depends(get_supabase_user)],
     year: int | None = Query(None, ge=2000, le=2100),
     month: int | None = Query(None, ge=1, le=12),
+    from_date: date | None = Query(
+        None,
+        alias="from",
+        description="Inclusive range start (YYYY-MM-DD). Use with `to` for a window around today.",
+    ),
+    to_date: date | None = Query(
+        None,
+        alias="to",
+        description="Inclusive range end (YYYY-MM-DD). Use with `from`.",
+    ),
+    month_bucket: date | None = Query(
+        None,
+        description="First day of month (YYYY-MM-01) for monthly task_kind when using from/to.",
+    ),
+    task_kind: Literal["all", "daily", "monthly"] = Query(
+        "all",
+        description="Filter completions: daily todos only, monthly goals for this month only, or all tasks.",
+    ),
 ) -> list[DailyCompletion]:
     today = date.today()
-    y = year if year is not None else today.year
-    m = month if month is not None else today.month
-    start = date(y, m, 1)
-    end = date(y, m, monthrange(y, m)[1])
+    if (from_date is None) ^ (to_date is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide both `from` and `to`, or neither (use year and month).",
+        )
+
+    if from_date is not None and to_date is not None:
+        start = min(from_date, to_date)
+        end = max(from_date, to_date)
+    else:
+        y = year if year is not None else today.year
+        m = month if month is not None else today.month
+        start = date(y, m, 1)
+        end = date(y, m, monthrange(y, m)[1])
 
     start_s = start.isoformat()
     end_s = end.isoformat()
+
+    allowed_ids: set[str] | None = None
+    if task_kind in ("daily", "monthly"):
+        try:
+            tasks_res = run_query(
+                lambda: db.table("tasks").select("id, task_kind, month_bucket"),
+            )
+        except APIError as e:
+            _http_from_api_error(e)
+        task_rows = tasks_res.data or []
+        if task_kind == "daily":
+            allowed_ids = {
+                str(t["id"]) for t in task_rows if _task_kind_from_row(t) == "daily"
+            }
+        else:
+            mb_filter = (
+                month_bucket.isoformat()[:10]
+                if month_bucket is not None
+                else date(start.year, start.month, 1).isoformat()
+            )
+            allowed_ids = {
+                str(t["id"])
+                for t in task_rows
+                if _task_kind_from_row(t) == "monthly"
+                and _month_bucket_iso(t) == mb_filter
+            }
 
     # Count rows with completed=true per calendar day (task_logs.date)
     res = run_query(
         lambda: (
             db.table("task_logs")
-            .select("date")
+            .select("task_id, date")
             .eq("completed", True)
             .gte("date", start_s)
             .lte("date", end_s)
@@ -301,6 +497,9 @@ def monthly_completions(
     rows = res.data or []
     counts: dict[str, int] = {}
     for r in rows:
+        tid = str(r["task_id"])
+        if allowed_ids is not None and tid not in allowed_ids:
+            continue
         d = _parse_date_cell(r["date"]).isoformat()
         counts[d] = counts.get(d, 0) + 1
 
@@ -309,12 +508,15 @@ def monthly_completions(
         tr = run_query(
             lambda: (
                 db.table("task_rest_days")
-                .select("date")
+                .select("task_id, date")
                 .gte("date", start_s)
                 .lte("date", end_s)
             )
         )
         for r in tr.data or []:
+            tid = str(r["task_id"])
+            if allowed_ids is not None and tid not in allowed_ids:
+                continue
             ds = _parse_date_cell(r["date"]).isoformat()
             rest_marks_by_day[ds] += 1
     except APIError:
@@ -350,6 +552,114 @@ def monthly_completions(
         d += timedelta(days=1)
 
     return out
+
+
+def _task_visible_on_day(task_row: dict[str, Any], on: date) -> bool:
+    if _task_kind_from_row(task_row) == "daily":
+        return True
+    mb = _month_bucket_iso(task_row)
+    if mb is None:
+        return False
+    want = date(on.year, on.month, 1).isoformat()
+    return mb == want
+
+
+@router.get("/calendar/day", response_model=CalendarDayOut)
+def calendar_day(
+    db: Annotated[Client, Depends(get_supabase_user)],
+    on: date = Query(..., description="Calendar date (YYYY-MM-DD), browser-local."),
+) -> CalendarDayOut:
+    """Tasks and completion/rest state for a single day (in-app calendar detail panel)."""
+    day_str = on.isoformat()
+    try:
+        tasks_res = run_query(
+            lambda: db.table("tasks").select("*").order("created_at", desc=True)
+        )
+    except APIError as e:
+        _http_from_api_error(e)
+    task_rows = [r for r in (tasks_res.data or []) if _task_visible_on_day(r, on)]
+
+    log_map: dict[str, bool] = {}
+    try:
+        logs = run_query(
+            lambda: (
+                db.table("task_logs")
+                .select("task_id, completed")
+                .eq("date", day_str)
+            )
+        )
+        for r in logs.data or []:
+            log_map[str(r["task_id"])] = r.get("completed") is True
+    except APIError as e:
+        _http_from_api_error(e)
+
+    task_rest_ids: set[str] = set()
+    try:
+        tr = run_query(
+            lambda: (
+                db.table("task_rest_days")
+                .select("task_id")
+                .eq("date", day_str)
+            )
+        )
+        for r in tr.data or []:
+            task_rest_ids.add(str(r["task_id"]))
+    except APIError as e:
+        if not _is_task_rest_days_table_missing(e):
+            _http_from_api_error(e)
+
+    global_rest = False
+    try:
+        gr = run_query(
+            lambda: (
+                db.table("rest_days")
+                .select("date")
+                .eq("date", day_str)
+                .limit(1)
+            )
+        )
+        global_rest = bool(gr.data)
+    except APIError:
+        pass
+
+    out_tasks: list[CalendarDayTaskOut] = []
+    for row in task_rows:
+        tid = str(row["id"])
+        mb_raw = row.get("month_bucket")
+        mb_d: date | None = None
+        if mb_raw is not None:
+            if isinstance(mb_raw, str):
+                mb_d = date.fromisoformat(mb_raw[:10])
+            elif isinstance(mb_raw, datetime):
+                mb_d = mb_raw.date()
+            elif isinstance(mb_raw, date) and not isinstance(mb_raw, datetime):
+                mb_d = mb_raw
+        kind: Literal["daily", "monthly"] = (
+            "monthly" if row.get("task_kind") == "monthly" else "daily"
+        )
+        wsa = _row_hhmm(row, "window_start")
+        wea = _row_hhmm(row, "window_end")
+        out_tasks.append(
+            CalendarDayTaskOut(
+                task_id=tid,
+                title=str(row.get("title") or ""),
+                task_kind=kind,
+                month_bucket=mb_d,
+                completed=log_map.get(tid, False),
+                rest_today=tid in task_rest_ids,
+                window_start=wsa if kind == "daily" else None,
+                window_end=wea if kind == "daily" else None,
+            )
+        )
+
+    out_tasks.sort(
+        key=lambda t: (
+            t.window_start or "99:99",
+            t.title,
+        ),
+    )
+
+    return CalendarDayOut(date=on, global_rest=global_rest, tasks=out_tasks)
 
 
 @router.get("/tasks/{task_id}/logs", response_model=list[TaskLogOut])
@@ -670,6 +980,96 @@ def upsert_weekly_review(
     return WeeklyReviewOut.from_row(out.data[0])
 
 
+def _assert_saturday(d: date) -> None:
+    if d.weekday() != 5:
+        raise HTTPException(
+            status_code=400,
+            detail="weekend_start must be a Saturday (YYYY-MM-DD).",
+        )
+
+
+@router.get("/weekend-plan", response_model=WeekendPlanOut)
+def get_weekend_plan(
+    db: Annotated[Client, Depends(get_supabase_user)],
+    weekend_start: date = Query(..., description="Saturday of that weekend"),
+) -> WeekendPlanOut:
+    _assert_saturday(weekend_start)
+    ws = weekend_start.isoformat()
+    try:
+        res = run_query(
+            lambda: (
+                db.table("weekend_plans")
+                .select("*")
+                .eq("weekend_start", ws)
+                .limit(1)
+            )
+        )
+    except APIError as e:
+        _http_from_api_error(e)
+    if not res.data:
+        return WeekendPlanOut(
+            id=None,
+            weekend_start=weekend_start,
+            items=[],
+            created_at=None,
+            updated_at=None,
+        )
+    return WeekendPlanOut.from_row(res.data[0])
+
+
+@router.put("/weekend-plan", response_model=WeekendPlanOut)
+def upsert_weekend_plan(
+    body: WeekendPlanUpsert,
+    db: Annotated[Client, Depends(get_supabase_user)],
+) -> WeekendPlanOut:
+    _assert_saturday(body.weekend_start)
+    ws = body.weekend_start.isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "weekend_start": ws,
+        "notes": weekend_notes_json_from_items(body.items),
+        "updated_at": now_iso,
+    }
+    try:
+        ex = run_query(
+            lambda: (
+                db.table("weekend_plans")
+                .select("id")
+                .eq("weekend_start", ws)
+                .limit(1)
+            )
+        )
+        if ex.data:
+            run_query(
+                lambda: (
+                    db.table("weekend_plans")
+                    .update(payload)
+                    .eq("weekend_start", ws)
+                ),
+            )
+        else:
+            run_query(
+                lambda: (
+                    db.table("weekend_plans").insert(
+                        {**payload, "created_at": now_iso},
+                    )
+                ),
+            )
+        out = run_query(
+            lambda: (
+                db.table("weekend_plans")
+                .select("*")
+                .eq("weekend_start", ws)
+                .limit(1)
+            )
+        )
+    except APIError as e:
+        _http_from_api_error(e)
+    if not out.data:
+        raise HTTPException(status_code=500, detail="Weekend plan save failed")
+    return WeekendPlanOut.from_row(out.data[0])
+
+
 @router.get("/rest-days", response_model=list[RestDayOut])
 def list_rest_days(
     db: Annotated[Client, Depends(get_supabase_user)],
@@ -777,9 +1177,9 @@ def export_json(db: Annotated[Client, Depends(get_supabase_user)]) -> JSONRespon
 def export_csv(db: Annotated[Client, Depends(get_supabase_user)]) -> PlainTextResponse:
     try:
         tasks = run_query(
-            lambda: db.table("tasks").select("id, title, created_at").order(
-                "created_at", desc=True
-            )
+            lambda: db.table("tasks")
+            .select("id, title, created_at, task_kind, month_bucket, window_start, window_end")
+            .order("created_at", desc=True)
         )
         logs = run_query(
             lambda: (
@@ -790,7 +1190,19 @@ def export_csv(db: Annotated[Client, Depends(get_supabase_user)]) -> PlainTextRe
         _http_from_api_error(e)
     buf = StringIO()
     w = csv.writer(buf)
-    w.writerow(["task_id", "task_title", "task_created_at", "log_date", "completed"])
+    w.writerow(
+        [
+            "task_id",
+            "task_title",
+            "task_created_at",
+            "task_kind",
+            "month_bucket",
+            "window_start",
+            "window_end",
+            "log_date",
+            "completed",
+        ],
+    )
     task_rows = {str(r["id"]): r for r in (tasks.data or [])}
     log_rows = logs.data or []
     for r in log_rows:
@@ -800,19 +1212,43 @@ def export_csv(db: Annotated[Client, Depends(get_supabase_user)]) -> PlainTextRe
         tca = t.get("created_at", "")
         if hasattr(tca, "isoformat"):
             tca = tca.isoformat()
+        tk = t.get("task_kind", "daily")
+        mb = t.get("month_bucket")
+        if mb is not None and hasattr(mb, "isoformat"):
+            mb = mb.isoformat()
+        elif isinstance(mb, str):
+            mb = mb[:10]
+        wss = t.get("window_start") or ""
+        wee = t.get("window_end") or ""
+        if isinstance(wss, str):
+            wss = wss.strip()
+        if isinstance(wee, str):
+            wee = wee.strip()
         ld = r.get("date", "")
         if hasattr(ld, "isoformat"):
             ld = ld.isoformat()
         elif isinstance(ld, str):
             ld = ld[:10]
-        w.writerow([tid, title, tca, ld, r.get("completed")])
+        w.writerow([tid, title, tca, tk, mb or "", wss, wee, ld, r.get("completed")])
     logged_ids = {str(x["task_id"]) for x in log_rows}
     for tid, t in task_rows.items():
         if tid not in logged_ids:
             tca = t.get("created_at", "")
             if hasattr(tca, "isoformat"):
                 tca = tca.isoformat()
-            w.writerow([tid, t.get("title", ""), tca, "", ""])
+            tk = t.get("task_kind", "daily")
+            mb = t.get("month_bucket")
+            if mb is not None and hasattr(mb, "isoformat"):
+                mb = mb.isoformat()
+            elif isinstance(mb, str):
+                mb = mb[:10]
+            wss = t.get("window_start") or ""
+            wee = t.get("window_end") or ""
+            if isinstance(wss, str):
+                wss = wss.strip()
+            if isinstance(wee, str):
+                wee = wee.strip()
+            w.writerow([tid, t.get("title", ""), tca, tk, mb or "", wss, wee, "", ""])
     return PlainTextResponse(
         buf.getvalue(),
         media_type="text/csv; charset=utf-8",
