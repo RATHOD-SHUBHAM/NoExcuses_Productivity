@@ -22,6 +22,19 @@ function bucketHasActivity(b: ApiDayCheckinBucket): boolean {
   return b.expected > 0 || b.rested > 0;
 }
 
+/** Share of checklist items completed (resting a task removes it from expected). */
+function combinedChecklistStats(data: ApiDayCheckinSummary): {
+  expected: number;
+  completed: number;
+  pct: number;
+} | null {
+  const expected = data.daily.expected + data.monthly.expected;
+  const completed = data.daily.completed + data.monthly.completed;
+  if (expected <= 0) return null;
+  const pct = Math.round((completed / expected) * 100);
+  return { expected, completed, pct };
+}
+
 function BucketPanel({
   title,
   b,
@@ -116,6 +129,11 @@ export function YesterdayCheckinSummary({ refreshKey }: Props) {
     !bucketHasActivity(data.daily) &&
     !bucketHasActivity(data.monthly);
 
+  const productivity =
+    data && !data.global_rest && !showEmpty
+      ? combinedChecklistStats(data)
+      : null;
+
   return (
     <div className={`${glassCard} border-white/[0.06] px-3 py-3 sm:px-4`}>
       <div className="flex flex-wrap items-end justify-between gap-2 border-b border-white/[0.06] pb-2.5">
@@ -142,10 +160,34 @@ export function YesterdayCheckinSummary({ refreshKey }: Props) {
           ) : showEmpty ? (
             <p className="text-sm text-zinc-500">Nothing on your list that day.</p>
           ) : (
-            <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
-              <BucketPanel title="Daily" b={data.daily} />
-              <BucketPanel title="Monthly" b={data.monthly} />
-            </div>
+            <>
+              {productivity ? (
+                <div className="mb-3 rounded-lg border border-emerald-500/15 bg-emerald-950/25 px-3 py-2.5">
+                  <p className="text-sm leading-snug text-zinc-200">
+                    <span className="font-display text-2xl font-medium tabular-nums text-emerald-300">
+                      {productivity.pct}%
+                    </span>
+                    <span className="text-zinc-500"> productive</span>
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+                    You checked off{" "}
+                    <span className="font-medium text-zinc-300 tabular-nums">
+                      {productivity.completed}
+                    </span>{" "}
+                    of{" "}
+                    <span className="tabular-nums text-zinc-300">
+                      {productivity.expected}
+                    </span>{" "}
+                    checklist items (daily + monthly). Tasks marked rest don’t
+                    count toward this total.
+                  </p>
+                </div>
+              ) : null}
+              <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
+                <BucketPanel title="Daily" b={data.daily} />
+                <BucketPanel title="Monthly" b={data.monthly} />
+              </div>
+            </>
           )}
         </div>
       ) : null}

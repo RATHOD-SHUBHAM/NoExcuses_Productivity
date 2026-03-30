@@ -16,6 +16,8 @@ type Props = {
   showKindBadge?: boolean;
   /** When false, no per-day checkbox (rare; monthly goals use the same daily check-in on home). */
   showCompleteCheckbox?: boolean;
+  /** When false, task title is plain text (no link to task detail). */
+  linkToTaskDetail?: boolean;
 };
 
 export function TaskListSection({
@@ -29,6 +31,7 @@ export function TaskListSection({
   emptyHint,
   showKindBadge = false,
   showCompleteCheckbox = true,
+  linkToTaskDetail = true,
 }: Props) {
   const { timeFormat } = useTimeFormat();
 
@@ -92,12 +95,18 @@ export function TaskListSection({
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <Link
-                        to={`/tasks/${task.id}`}
-                        className="min-w-0 flex-1 text-base font-medium leading-snug text-white [overflow-wrap:anywhere] hover:text-rose-200/95"
-                      >
-                        {task.title}
-                      </Link>
+                      {linkToTaskDetail ? (
+                        <Link
+                          to={`/tasks/${task.id}`}
+                          className="min-w-0 flex-1 text-base font-medium leading-snug text-white [overflow-wrap:anywhere] hover:text-rose-200/95"
+                        >
+                          {task.title}
+                        </Link>
+                      ) : (
+                        <span className="min-w-0 flex-1 text-base font-medium leading-snug text-white [overflow-wrap:anywhere]">
+                          {task.title}
+                        </span>
+                      )}
                       {showKindBadge ? (
                         <span
                           className={

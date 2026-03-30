@@ -27,7 +27,7 @@ import {
   pageContainerWide,
 } from "../lib/ui";
 import { SectionHeading } from "../components/ui/SectionHeading";
-import { sortDailiesByWindow } from "../lib/sortTasks";
+import { sortDailiesForHome, sortMonthlyForHome } from "../lib/sortTasks";
 import type { Task } from "../types/task";
 
 function logsShowCompletedToday(
@@ -482,9 +482,11 @@ export function HomePage() {
                 sectionTitle="Monthly"
                 emptyHint="Add a monthly goal above."
                 showKindBadge={false}
-                tasks={tasks.filter(
-                  (t) =>
-                    t.taskKind === "monthly" && t.monthBucket === bucket,
+                tasks={sortMonthlyForHome(
+                  tasks.filter(
+                    (t) =>
+                      t.taskKind === "monthly" && t.monthBucket === bucket,
+                  ),
                 )}
                 loading={tasksLoading}
                 onToggleComplete={toggleComplete}
@@ -495,7 +497,8 @@ export function HomePage() {
                 sectionTitle="Daily"
                 emptyHint="Add today’s todos above (or a recurring habit)."
                 showKindBadge
-                tasks={sortDailiesByWindow(dailyTasksForHome(tasks, todayYmd))}
+                linkToTaskDetail={false}
+                tasks={sortDailiesForHome(dailyTasksForHome(tasks, todayYmd))}
                 loading={tasksLoading}
                 onToggleComplete={toggleComplete}
                 onDelete={deleteTask}
