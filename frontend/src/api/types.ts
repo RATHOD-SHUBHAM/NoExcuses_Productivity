@@ -8,6 +8,22 @@ export type ApiTask = {
   month_bucket?: string | null;
   window_start?: string | null;
   window_end?: string | null;
+  /** YYYY-MM-DD when this daily is a one-day plan; omit/null = recurring. */
+  daily_for_date?: string | null;
+};
+
+export type ApiDayCheckinBucket = {
+  expected: number;
+  completed: number;
+  incomplete: number;
+  rested: number;
+};
+
+export type ApiDayCheckinSummary = {
+  date: string;
+  global_rest: boolean;
+  daily: ApiDayCheckinBucket;
+  monthly: ApiDayCheckinBucket;
 };
 
 export type ApiTaskLog = {

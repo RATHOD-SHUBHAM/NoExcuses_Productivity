@@ -5,9 +5,11 @@ import { WeeklyHeatmapStrip } from "../components/heatmaps/WeeklyHeatmapStrip";
 import * as tasksApi from "../api/tasksApi";
 import type { ApiTaskLog, ApiTaskStats } from "../api/types";
 import {
+  dailyTrackedDateKeys,
   formatMonthYearFromBucket,
   inclusiveLocalRange,
   localDateKeyFromIso,
+  monthlyApplicableDateKeys,
   todayLocalISO,
 } from "../lib/date";
 import { SectionHeading } from "../components/ui/SectionHeading";
@@ -178,7 +180,13 @@ export function TaskDetailPage() {
     () =>
       task_id
         ? heatmapAccentForTask(task_id)
-        : { done: "#10b981", dim: "#27272a", rest: "#d97706" },
+        : {
+            done: "#10b981",
+            dim: "#27272a",
+            rest: "#d97706",
+            missed: "hsl(28 62% 38%)",
+            outOfScope: "rgba(24, 24, 27, 0.45)",
+          },
     [task_id],
   );
 
@@ -188,6 +196,34 @@ export function TaskDetailPage() {
     for (const k of perTaskRestKeys) m.set(k, true);
     return m;
   }, [globalRestKeys, perTaskRestKeys]);
+
+  /** Monthly goals: only these local days belong to the goal (heatmap + missed count). */
+  const heatmapApplicableKeys = useMemo(() => {
+    if (taskKind !== "monthly" || !monthBucket || !createdAt) return undefined;
+    return monthlyApplicableDateKeys(monthBucket, createdAt, today);
+  }, [taskKind, monthBucket, createdAt, today]);
+
+  const daysMissed = useMemo(() => {
+    if (!createdAt) return null;
+    const keys =
+      taskKind === "monthly" && monthBucket
+        ? monthlyApplicableDateKeys(monthBucket, createdAt, today)
+        : dailyTrackedDateKeys(createdAt, today);
+    let n = 0;
+    for (const d of keys) {
+      if (restByDate.get(d)) continue;
+      if (logCompletedByDate.get(d) === true) continue;
+      n += 1;
+    }
+    return n;
+  }, [
+    taskKind,
+    monthBucket,
+    createdAt,
+    today,
+    restByDate,
+    logCompletedByDate,
+  ]);
 
   /** Checkbox: only per-task rest (whole-day rest still colors the heatmap). */
   const perHabitRestToday = perTaskRestKeys.has(today);
@@ -475,6 +511,19 @@ export function TaskDetailPage() {
                     or rest
                   </p>
                 </div>
+                {daysMissed !== null ? (
+                  <div className="rounded-lg border border-orange-500/25 bg-orange-950/20 px-3 py-2.5">
+                    <dt className="text-xs text-zinc-500">Days missed</dt>
+                    <dd className="mt-1 text-lg font-semibold tabular-nums text-orange-200">
+                      {daysMissed}
+                    </dd>
+                    <p className="mt-1 text-[11px] leading-snug text-zinc-500">
+                      {taskKind === "monthly"
+                        ? "In this goal’s month: days without a check-off and not marked rest."
+                        : "Tracked days without a check-off and not marked rest."}
+                    </p>
+                  </div>
+                ) : null}
                 <div className="sm:col-span-2">
                   <dt className="text-xs text-zinc-500">
                     Days tracked (window)
@@ -511,13 +560,34 @@ export function TaskDetailPage() {
                 />
                 Rest
               </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="size-2.5 shrink-0 rounded-sm bg-zinc-700"
-                  aria-hidden
-                />
-                Off
-              </span>
+              {taskKind === "monthly" ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className="size-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: accent.missed }}
+                      aria-hidden
+                    />
+                    Not done
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className="size-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: accent.outOfScope }}
+                      aria-hidden
+                    />
+                    Other month
+                  </span>
+                </>
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="size-2.5 shrink-0 rounded-sm bg-zinc-700"
+                    aria-hidden
+                  />
+                  Off
+                </span>
+              )}
             </p>
             <WeeklyHeatmapStrip
               days={weeklyDays}
@@ -525,6 +595,7 @@ export function TaskDetailPage() {
               restByDate={restByDate}
               todayKey={today}
               accent={accent}
+              heatmapApplicableKeys={heatmapApplicableKeys}
             />
           </section>
 
@@ -552,13 +623,34 @@ export function TaskDetailPage() {
                 />
                 Rest
               </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="size-2.5 shrink-0 rounded-sm bg-zinc-700"
-                  aria-hidden
-                />
-                Off
-              </span>
+              {taskKind === "monthly" ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className="size-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: accent.missed }}
+                      aria-hidden
+                    />
+                    Not done
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className="size-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: accent.outOfScope }}
+                      aria-hidden
+                    />
+                    Other month
+                  </span>
+                </>
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="size-2.5 shrink-0 rounded-sm bg-zinc-700"
+                    aria-hidden
+                  />
+                  Off
+                </span>
+              )}
             </p>
             <div className={`${glassCard} px-3 py-4 sm:px-4`}>
               <ContributionGrid
@@ -566,6 +658,7 @@ export function TaskDetailPage() {
                 logCompletedByDate={logCompletedByDate}
                 restByDate={restByDate}
                 accent={accent}
+                heatmapApplicableKeys={heatmapApplicableKeys}
               />
             </div>
           </section>

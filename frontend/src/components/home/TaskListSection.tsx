@@ -14,7 +14,7 @@ type Props = {
   sectionDescription?: string;
   emptyHint: string;
   showKindBadge?: boolean;
-  /** When false, no per-day checkbox (e.g. monthly goals — log days on calendar / task page). */
+  /** When false, no per-day checkbox (rare; monthly goals use the same daily check-in on home). */
   showCompleteCheckbox?: boolean;
 };
 
@@ -87,7 +87,7 @@ export function TaskListSection({
                     <span
                       className="mt-0.5 size-[1.125rem] shrink-0 rounded-full border border-rose-400/35 bg-rose-500/10 shadow-[0_0_12px_-4px_rgba(244,63,94,0.35)]"
                       aria-hidden
-                      title="Monthly goal — log days on the calendar or task page"
+                      title="No check-in on this list — use calendar or task page"
                     />
                   )}
                   <div className="min-w-0 flex-1">
@@ -106,7 +106,11 @@ export function TaskListSection({
                               : "shrink-0 rounded border border-zinc-600/45 bg-zinc-800/55 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-zinc-300"
                           }
                         >
-                          {task.taskKind === "monthly" ? "Month" : "Daily"}
+                          {task.taskKind === "monthly"
+                            ? "Month"
+                            : task.dailyForDate
+                              ? "Today"
+                              : "Daily"}
                         </span>
                       ) : null}
                     </div>
@@ -124,8 +128,7 @@ export function TaskListSection({
                         )}
                       </p>
                     ) : null}
-                    {!showCompleteCheckbox &&
-                    task.taskKind === "monthly" &&
+                    {task.taskKind === "monthly" &&
                     task.daysCompletedThisMonth != null &&
                     task.daysInMonth != null ? (
                       <p className="mt-1.5 text-sm leading-snug text-zinc-500">

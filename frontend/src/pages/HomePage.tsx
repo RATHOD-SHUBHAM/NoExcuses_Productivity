@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CalendarView } from "../components/calendar/CalendarView";
 import { GlobalRestTodayControl } from "../components/home/GlobalRestTodayControl";
@@ -12,7 +12,9 @@ import { ProductivitySummary } from "../components/home/ProductivitySummary";
 import { QuoteSection } from "../components/home/QuoteSection";
 import { TaskListSection } from "../components/home/TaskListSection";
 import { WeeklyReviewSection } from "../components/home/WeeklyReviewSection";
+import { YesterdayCheckinSummary } from "../components/home/YesterdayCheckinSummary";
 import * as tasksApi from "../api/tasksApi";
+import { dailyTaskAppliesOnLocalDay } from "../lib/dailyTaskAppliesOnDay";
 import {
   firstDayOfMonthLocalISO,
   getRhythmChartWindow,
@@ -82,6 +84,12 @@ async function tasksWithTodayFromApi(): Promise<Task[]> {
         t.window_end != null && String(t.window_end).trim()
           ? String(t.window_end).trim()
           : null;
+      const dfd =
+        taskKind === "daily" &&
+        t.daily_for_date != null &&
+        String(t.daily_for_date).length > 0
+          ? String(t.daily_for_date).slice(0, 10)
+          : null;
       const base: Task = {
         id: t.id,
         title: t.title,
@@ -92,6 +100,7 @@ async function tasksWithTodayFromApi(): Promise<Task[]> {
         monthBucket: mb,
         windowStart: ws,
         windowEnd: we,
+        dailyForDate: dfd,
       };
       if (taskKind === "monthly" && mb) {
         const { completed, daysInMonth } = countCompletedDaysInBucketMonth(
@@ -118,8 +127,10 @@ function mapRowsToChartPoints(
   }));
 }
 
-function dailyOnlyTasks(tasks: Task[]): Task[] {
-  return tasks.filter((t) => t.taskKind === "daily");
+function dailyTasksForHome(tasks: Task[], todayYmd: string): Task[] {
+  return tasks.filter(
+    (t) => t.taskKind === "daily" && dailyTaskAppliesOnLocalDay(t, todayYmd),
+  );
 }
 
 export function HomePage() {
@@ -200,6 +211,31 @@ export function HomePage() {
     void loadGraphs();
   }, [loadGraphs]);
 
+  /** When the local calendar day rolls over (tab open overnight or return from background), reload so dailies/monthlies reflect “today” only. */
+  const lastLocalDayRef = useRef(todayLocalISO());
+  useEffect(() => {
+    const syncIfNewCalendarDay = () => {
+      const now = todayLocalISO();
+      if (now === lastLocalDayRef.current) return;
+      lastLocalDayRef.current = now;
+      void loadTasks();
+      void loadGraphs({ silent: true });
+      setHabitActivityTick((n) => n + 1);
+      setGlobalRestTick((n) => n + 1);
+    };
+    const id = window.setInterval(syncIfNewCalendarDay, 60_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") syncIfNewCalendarDay();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", syncIfNewCalendarDay);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", syncIfNewCalendarDay);
+    };
+  }, [loadTasks, loadGraphs]);
+
   useEffect(() => {
     if (!plannerFromNav) {
       return;
@@ -213,16 +249,17 @@ export function HomePage() {
   }, [plannerFromNav]);
 
   const bucket = firstDayOfMonthLocalISO();
+  const todayYmd = todayLocalISO();
   const slotsPerDay = useMemo(
     () =>
       Math.max(
         1,
-        dailyOnlyTasks(tasks).length +
+        dailyTasksForHome(tasks, todayYmd).length +
           tasks.filter(
             (t) => t.taskKind === "monthly" && t.monthBucket === bucket,
           ).length,
       ),
-    [tasks, bucket],
+    [tasks, bucket, todayYmd],
   );
 
   const summaryRefreshKey = useMemo(
@@ -286,14 +323,20 @@ export function HomePage() {
 
   async function addDailyTodo(
     title: string,
-    opts?: { windowStart?: string | null; windowEnd?: string | null },
+    opts?: {
+      windowStart?: string | null;
+      windowEnd?: string | null;
+      recurringDaily?: boolean;
+    },
   ) {
     setTasksError(null);
+    const today = todayLocalISO();
     try {
       const created = await tasksApi.createTask(title, {
         taskKind: "daily",
         windowStart: opts?.windowStart,
         windowEnd: opts?.windowEnd,
+        dailyForDate: opts?.recurringDaily ? null : today,
       });
       const ws =
         created.window_start != null && String(created.window_start).trim()
@@ -302,6 +345,11 @@ export function HomePage() {
       const we =
         created.window_end != null && String(created.window_end).trim()
           ? String(created.window_end).trim()
+          : null;
+      const cdf =
+        created.daily_for_date != null &&
+        String(created.daily_for_date).length > 0
+          ? String(created.daily_for_date).slice(0, 10)
           : null;
       setTasks((prev) => [
         {
@@ -314,6 +362,7 @@ export function HomePage() {
           monthBucket: null,
           windowStart: ws,
           windowEnd: we,
+          dailyForDate: cdf,
         },
         ...prev,
       ]);
@@ -415,13 +464,16 @@ export function HomePage() {
 
           <div className={`${homeFeaturePanel} ${homePanelPad}`}>
             <SectionHeading id="check-in-heading">Check in</SectionHeading>
-            <div className="mb-5">
+            <div className="mb-5 space-y-3">
               <GlobalRestTodayControl
                 disabled={tasksLoading}
                 onChanged={async () => {
                   await refreshHomeFromCalendar();
                   setGlobalRestTick((n) => n + 1);
                 }}
+              />
+              <YesterdayCheckinSummary
+                refreshKey={`${habitActivityTick}|${globalRestTick}`}
               />
             </div>
             <div className="grid gap-5 sm:gap-6 md:grid-cols-2 md:items-start">
@@ -430,7 +482,6 @@ export function HomePage() {
                 sectionTitle="Monthly"
                 emptyHint="Add a monthly goal above."
                 showKindBadge={false}
-                showCompleteCheckbox={false}
                 tasks={tasks.filter(
                   (t) =>
                     t.taskKind === "monthly" && t.monthBucket === bucket,
@@ -442,9 +493,9 @@ export function HomePage() {
               <TaskListSection
                 sectionHeadingId="daily-todos-heading"
                 sectionTitle="Daily"
-                emptyHint="Add a daily habit above."
+                emptyHint="Add today’s todos above (or a recurring habit)."
                 showKindBadge
-                tasks={sortDailiesByWindow(dailyOnlyTasks(tasks))}
+                tasks={sortDailiesByWindow(dailyTasksForHome(tasks, todayYmd))}
                 loading={tasksLoading}
                 onToggleComplete={toggleComplete}
                 onDelete={deleteTask}
@@ -511,7 +562,7 @@ export function HomePage() {
             error={graphError}
             subtitle={graphLabel}
             taskCount={Math.max(
-              tasks.filter((t) => t.taskKind === "daily").length,
+              dailyTasksForHome(tasks, todayYmd).length,
               1,
             )}
             footerNote="Daily habits: completions and rest in this window."

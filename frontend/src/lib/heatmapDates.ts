@@ -111,7 +111,12 @@ export function weekColumnTitle(weekStartMonday: Date): string {
   return `Column = one week (Mon–Sun): ${mon} → ${sunStr}`;
 }
 
-export type HeatmapDayStatus = "done" | "rest" | "none";
+export type HeatmapDayStatus =
+  | "done"
+  | "rest"
+  | "none"
+  | "missed"
+  | "out_of_scope";
 
 function humanDateLong(d: Date): string {
   return d.toLocaleDateString(undefined, {
@@ -140,6 +145,10 @@ export function dayCellHoverTitleFromStatus(
       ? "Completed"
       : status === "rest"
         ? "Rest day"
-        : "Off";
+        : status === "missed"
+          ? "Not completed"
+          : status === "out_of_scope"
+            ? "Outside this goal’s month"
+            : "Off";
   return `${human} — ${label}`;
 }

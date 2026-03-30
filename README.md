@@ -24,6 +24,8 @@ Open the Vercel link to use the app. **New user?** Use **sign up** with your ema
 
 NoExcuses is a habit and accountability app: **per-account** data with **Supabase Auth** (email/password), **daily** and **monthly** goals, completion logs, calendar heatmaps, rest days (whole-day and per-habit), rhythm charts, a **weekly review** (saved per week), and a **weekend wishlist** (ideas for the coming Sat–Sun — not habit tasks). Optional **time windows** (HH:MM) for daily habits and a **12h / 24h** time display preference (browser, stored locally).
 
+**Daily todos** can be **today’s plan only** (a fresh list each calendar day) or **repeat every day** (recurring habit). That behavior is stored as `daily_for_date` on `tasks` (see migrations). The home dashboard can show **yesterday’s check-in summary** (done / not done / rested for daily and monthly tasks) via `GET /api/stats/day-checkin`. The UI also refreshes when the **local calendar day** changes (tab left open overnight). **Monthly goals** on the task detail page use **month-scoped heatmaps** (days outside the goal month look different from “not done” inside the month), plus a **days missed** count.
+
 Stack: **React (Vite)** frontend, **FastAPI** API, **Supabase (PostgreSQL)** with row-level security.
 
 ## Version
@@ -43,7 +45,7 @@ You need:
 2. **Python 3.12+** and **[uv](https://docs.astral.sh/uv/)** for the backend (see `.python-version` for a suggested local version).
 3. A **Supabase** project and API keys.
 
-Clone the repository, configure environment variables, apply **all** SQL migrations through **`008_weekend_plans.sql`** in Supabase, then run the API and the dev server (see **Installation** and **Run locally**).
+Clone the repository, configure environment variables, apply **all** SQL migrations through **`009_daily_for_date.sql`** in Supabase, then run the API and the dev server (see **Installation** and **Run locally**).
 
 ## Dependencies
 
@@ -106,7 +108,7 @@ Never commit real `.env` files or keys.
 
 ## Run locally
 
-After **Installation**—including copying `.env.example` to `.env` at the repo root and applying **Database (Supabase)** migrations—run the API and the frontend in **two terminals** from the repository root.
+After **Installation**—including copying `.env.example` to `.env` at the repo root and applying **Database (Supabase)** migrations (through **`009_daily_for_date.sql`**)—run the API and the frontend in **two terminals** from the repository root.
 
 1. **API (terminal 1)**
 
@@ -148,8 +150,15 @@ In the Supabase SQL editor, run scripts **in order** from `backend/sql/`:
 6. **`006_task_kinds.sql`** — `task_kind` (`daily` | `monthly`) and `month_bucket` on `tasks` for monthly goals vs daily todos.
 7. **`007_task_time_windows.sql`** — `window_start` / `window_end` on `tasks` (optional HH:MM windows for daily habits). Required for task create/update that sets time windows.
 8. **`008_weekend_plans.sql`** — `weekend_plans` (weekend **wishlist** items stored as JSON in `notes`, keyed by Saturday). Required for the **This weekend** section on Home.
+9. **`009_daily_for_date.sql`** — `daily_for_date` on `tasks` (nullable). When set for a **daily** task, that row only appears on that calendar day (browser-local); `NULL` means a recurring daily habit. Monthly tasks must keep `daily_for_date` null.
 
 Optional: **`001_task_logs_unique_task_date.sql`** only if your `task_logs` table was created without the unique constraint.
+
+If you ever ran a one-off migration named `007_daily_for_date.sql`, **`009_daily_for_date.sql`** is still safe to apply (`add column if not exists`).
+
+### API notes
+
+- **`GET /api/stats/day-checkin?on=YYYY-MM-DD`** — Returns done / not done / rested counts for **daily** and **monthly** tasks that apply on that calendar day (used for the **Yesterday** card on Home).
 
 ## Deploy to Render (API) and Vercel (frontend)
 
@@ -157,7 +166,7 @@ Typical flow: deploy the **backend first**, copy its public URL, then deploy the
 
 ### Prerequisite: Supabase
 
-- Run all SQL migrations through **`008_weekend_plans.sql`** (see **Database (Supabase)** below).
+- Run all SQL migrations through **`009_daily_for_date.sql`** (see **Database (Supabase)** below).
 - **Authentication → Providers:** enable **Email** (or your provider).
 - **Authentication → URL configuration:** add your production site URL for redirects / email links, e.g. `https://noexcuses-zeta.vercel.app`.
 
@@ -208,7 +217,7 @@ If the browser shows CORS errors, set **`CORS_ORIGINS`** on Render to the **exac
 
 ### Checklist
 
-- [ ] Supabase: migrations **000 → 008** applied on the project you use in production (`007` needed for planned time windows; `008` for weekend wishlist).
+- [ ] Supabase: migrations **000 → 009** applied on the project you use in production (`007` time windows, `008` weekend wishlist, `009` day-scoped daily todos / `daily_for_date`).
 - [ ] Render: `SUPABASE_KEY` is **publishable**, not service_role.
 - [ ] Vercel: `VITE_API_BASE_URL` matches Render (HTTPS, no trailing `/`).
 - [ ] Render: `CORS_ORIGINS` includes your Vercel production URL.

@@ -13,16 +13,28 @@ type Props = {
   weeks: WeekColumn[];
   logCompletedByDate: Map<string, boolean>;
   restByDate?: Map<string, boolean>;
-  accent: { done: string; dim: string; rest: string };
+  accent: {
+    done: string;
+    dim: string;
+    rest: string;
+    missed: string;
+    outOfScope: string;
+  };
+  heatmapApplicableKeys?: Set<string>;
 };
 
 function cellStatus(
   key: string,
   logCompletedByDate: Map<string, boolean>,
   restByDate: Map<string, boolean>,
+  applicableKeys: Set<string> | undefined,
 ): HeatmapDayStatus {
+  if (applicableKeys !== undefined && !applicableKeys.has(key)) {
+    return "out_of_scope";
+  }
   if (logCompletedByDate.get(key) === true) return "done";
   if (restByDate.get(key) === true) return "rest";
+  if (applicableKeys !== undefined && applicableKeys.has(key)) return "missed";
   return "none";
 }
 
@@ -34,6 +46,7 @@ export function ContributionGrid({
   logCompletedByDate,
   restByDate,
   accent,
+  heatmapApplicableKeys,
 }: Props) {
   if (weeks.length === 0) {
     return (
@@ -98,19 +111,32 @@ export function ContributionGrid({
                       );
                     }
                     const key = dateKeyLocal(cell);
-                    const status = cellStatus(key, logCompletedByDate, restMap);
+                    const status = cellStatus(
+                      key,
+                      logCompletedByDate,
+                      restMap,
+                      heatmapApplicableKeys,
+                    );
                     const bg =
                       status === "done"
                         ? accent.done
                         : status === "rest"
                           ? accent.rest
-                          : accent.dim;
+                          : status === "missed"
+                            ? accent.missed
+                            : status === "out_of_scope"
+                              ? accent.outOfScope
+                              : accent.dim;
                     const ring =
                       status === "done"
                         ? `0 0 0 1px ${accent.done}35`
                         : status === "rest"
                           ? `0 0 0 1px ${accent.rest}45`
-                          : `inset 0 0 0 1px rgba(255,255,255,0.05)`;
+                          : status === "missed"
+                            ? `0 0 0 1px rgba(251, 146, 60, 0.3)`
+                            : status === "out_of_scope"
+                              ? `inset 0 0 0 1px rgba(255,255,255,0.04)`
+                              : `inset 0 0 0 1px rgba(255,255,255,0.05)`;
                     return (
                       <div
                         key={key}

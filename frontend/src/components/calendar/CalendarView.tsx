@@ -261,7 +261,10 @@ export function CalendarView({
     setAddBusy(true);
     try {
       if (addKind === "daily") {
-        await tasksApi.createTask(title, { taskKind: "daily" });
+        await tasksApi.createTask(title, {
+          taskKind: "daily",
+          dailyForDate: selectedISO,
+        });
       } else {
         await tasksApi.createTask(title, {
           taskKind: "monthly",

@@ -18,6 +18,8 @@ from noexcuses_backend.schemas import (
     CalendarDayTaskOut,
     CompleteBody,
     DailyCompletion,
+    DayCheckinBucketOut,
+    DayCheckinSummaryOut,
     RestDayBody,
     RestDayOut,
     TaskCreate,
@@ -163,6 +165,65 @@ def _month_bucket_iso(row: dict[str, Any]) -> str | None:
     return None
 
 
+def _daily_for_date_from_row(row: dict[str, Any]) -> date | None:
+    v = row.get("daily_for_date")
+    if v is None:
+        return None
+    if isinstance(v, str):
+        return date.fromisoformat(v[:10])
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v
+    return None
+
+
+def _daily_task_applies_on_day(task_row: dict[str, Any], on: date) -> bool:
+    if _task_kind_from_row(task_row) != "daily":
+        return False
+    dfd = _daily_for_date_from_row(task_row)
+    if dfd is None:
+        created = _parse_task_row_created_at(task_row).date()
+        return created <= on
+    return dfd == on
+
+
+def _monthly_task_applies_on_day(task_row: dict[str, Any], on: date) -> bool:
+    if _task_kind_from_row(task_row) != "monthly":
+        return False
+    mb = _month_bucket_iso(task_row)
+    if mb is None:
+        return False
+    want = date(on.year, on.month, 1).isoformat()
+    return mb == want
+
+
+def _checkin_bucket_for_tasks(
+    task_rows: list[dict[str, Any]],
+    log_map: dict[str, bool],
+    task_rest_ids: set[str],
+) -> DayCheckinBucketOut:
+    completed = 0
+    incomplete = 0
+    rested = 0
+    for row in task_rows:
+        tid = str(row["id"])
+        if tid in task_rest_ids:
+            rested += 1
+            continue
+        if log_map.get(tid, False):
+            completed += 1
+        else:
+            incomplete += 1
+    expected = completed + incomplete
+    return DayCheckinBucketOut(
+        expected=expected,
+        completed=completed,
+        incomplete=incomplete,
+        rested=rested,
+    )
+
+
 def _parse_date_cell(value: Any) -> date:
     if isinstance(value, date) and not isinstance(value, datetime):
         return value
@@ -247,6 +308,11 @@ def create_task(
                 status_code=400,
                 detail="Time windows apply to daily habits only.",
             )
+        if body.daily_for_date is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="daily_for_date applies to daily tasks only.",
+            )
         if body.month_bucket is None:
             raise HTTPException(
                 status_code=400,
@@ -259,12 +325,14 @@ def create_task(
         }
     else:
         ws, we = _daily_window_pair(body.window_start, body.window_end)
+        dfd = body.daily_for_date.isoformat() if body.daily_for_date is not None else None
         row = {
             "title": title,
             "task_kind": "daily",
             "month_bucket": None,
             "window_start": ws,
             "window_end": we,
+            "daily_for_date": dfd,
         }
     try:
         res = run_query(lambda: db.table("tasks").insert(row))
@@ -554,14 +622,94 @@ def monthly_completions(
     return out
 
 
+@router.get("/stats/day-checkin", response_model=DayCheckinSummaryOut)
+def day_checkin_summary(
+    db: Annotated[Client, Depends(get_supabase_user)],
+    on: date = Query(..., description="Calendar date (YYYY-MM-DD), browser-local."),
+) -> DayCheckinSummaryOut:
+    """Done vs not done for daily and monthly tasks that apply on this day (excludes per-task rest from expected)."""
+    day_str = on.isoformat()
+    try:
+        tasks_res = run_query(
+            lambda: db.table("tasks").select("*").order("created_at", desc=True)
+        )
+    except APIError as e:
+        _http_from_api_error(e)
+    task_rows = tasks_res.data or []
+
+    global_rest = False
+    try:
+        gr = run_query(
+            lambda: (
+                db.table("rest_days")
+                .select("date")
+                .eq("date", day_str)
+                .limit(1)
+            )
+        )
+        global_rest = bool(gr.data)
+    except APIError:
+        pass
+
+    empty_bucket = DayCheckinBucketOut(
+        expected=0, completed=0, incomplete=0, rested=0
+    )
+    if global_rest:
+        return DayCheckinSummaryOut(
+            date=on,
+            global_rest=True,
+            daily=empty_bucket,
+            monthly=empty_bucket,
+        )
+
+    log_map: dict[str, bool] = {}
+    try:
+        logs = run_query(
+            lambda: (
+                db.table("task_logs")
+                .select("task_id, completed")
+                .eq("date", day_str)
+            )
+        )
+        for r in logs.data or []:
+            log_map[str(r["task_id"])] = r.get("completed") is True
+    except APIError as e:
+        _http_from_api_error(e)
+
+    task_rest_ids: set[str] = set()
+    try:
+        tr = run_query(
+            lambda: (
+                db.table("task_rest_days")
+                .select("task_id")
+                .eq("date", day_str)
+            )
+        )
+        for r in tr.data or []:
+            task_rest_ids.add(str(r["task_id"]))
+    except APIError as e:
+        if not _is_task_rest_days_table_missing(e):
+            _http_from_api_error(e)
+
+    daily_rows = [
+        r for r in task_rows if _daily_task_applies_on_day(r, on)
+    ]
+    monthly_rows = [
+        r for r in task_rows if _monthly_task_applies_on_day(r, on)
+    ]
+
+    return DayCheckinSummaryOut(
+        date=on,
+        global_rest=False,
+        daily=_checkin_bucket_for_tasks(daily_rows, log_map, task_rest_ids),
+        monthly=_checkin_bucket_for_tasks(monthly_rows, log_map, task_rest_ids),
+    )
+
+
 def _task_visible_on_day(task_row: dict[str, Any], on: date) -> bool:
     if _task_kind_from_row(task_row) == "daily":
-        return True
-    mb = _month_bucket_iso(task_row)
-    if mb is None:
-        return False
-    want = date(on.year, on.month, 1).isoformat()
-    return mb == want
+        return _daily_task_applies_on_day(task_row, on)
+    return _monthly_task_applies_on_day(task_row, on)
 
 
 @router.get("/calendar/day", response_model=CalendarDayOut)

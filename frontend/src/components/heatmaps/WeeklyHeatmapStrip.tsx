@@ -11,7 +11,15 @@ type Props = {
   /** Global and/or per-task rest for this habit (date key → true). */
   restByDate?: Map<string, boolean>;
   todayKey: string;
-  accent: { done: string; dim: string; rest: string };
+  accent: {
+    done: string;
+    dim: string;
+    rest: string;
+    missed: string;
+    outOfScope: string;
+  };
+  /** When set (monthly goals), only these days are “in scope”; others are out_of_scope. */
+  heatmapApplicableKeys?: Set<string>;
 };
 
 function weekdayShort(d: Date): string {
@@ -22,9 +30,14 @@ function cellStatus(
   key: string,
   logCompletedByDate: Map<string, boolean>,
   restByDate: Map<string, boolean> | undefined,
+  applicableKeys: Set<string> | undefined,
 ): HeatmapDayStatus {
+  if (applicableKeys !== undefined && !applicableKeys.has(key)) {
+    return "out_of_scope";
+  }
   if (logCompletedByDate.get(key) === true) return "done";
   if (restByDate?.get(key) === true) return "rest";
+  if (applicableKeys !== undefined && applicableKeys.has(key)) return "missed";
   return "none";
 }
 
@@ -34,6 +47,7 @@ export function WeeklyHeatmapStrip({
   restByDate,
   todayKey,
   accent,
+  heatmapApplicableKeys,
 }: Props) {
   const restMap = restByDate ?? new Map<string, boolean>();
   return (
@@ -42,19 +56,32 @@ export function WeeklyHeatmapStrip({
         {days.map((d) => {
           const key = dateKeyLocal(d);
           const isToday = key === todayKey;
-          const status = cellStatus(key, logCompletedByDate, restMap);
+          const status = cellStatus(
+            key,
+            logCompletedByDate,
+            restMap,
+            heatmapApplicableKeys,
+          );
           const bg =
             status === "done"
               ? accent.done
               : status === "rest"
                 ? accent.rest
-                : accent.dim;
+                : status === "missed"
+                  ? accent.missed
+                  : status === "out_of_scope"
+                    ? accent.outOfScope
+                    : accent.dim;
           const ring =
             status === "done"
               ? `0 0 0 1px ${accent.done}40`
               : status === "rest"
                 ? `0 0 0 1px ${accent.rest}50`
-                : `inset 0 0 0 1px rgba(255,255,255,0.05)`;
+                : status === "missed"
+                  ? `0 0 0 1px rgba(251, 146, 60, 0.35)`
+                  : status === "out_of_scope"
+                    ? `inset 0 0 0 1px rgba(255,255,255,0.04)`
+                    : `inset 0 0 0 1px rgba(255,255,255,0.05)`;
           return (
             <div
               key={key}

@@ -5,6 +5,7 @@ import { API_BASE_URL, assertApiBaseConfigured } from "./config";
 import type {
   ApiCalendarDay,
   ApiDailyCompletion,
+  ApiDayCheckinSummary,
   ApiRestDay,
   ApiTask,
   ApiTaskLog,
@@ -122,6 +123,14 @@ export function getCalendarDay(on: string): Promise<ApiCalendarDay> {
   return requestJson<ApiCalendarDay>(`/api/calendar/day?${q.toString()}`);
 }
 
+/** GET /api/stats/day-checkin — done / not done for a calendar day */
+export function getDayCheckinSummary(on: string): Promise<ApiDayCheckinSummary> {
+  const q = new URLSearchParams({ on: on.slice(0, 10) });
+  return requestJson<ApiDayCheckinSummary>(
+    `/api/stats/day-checkin?${q.toString()}`,
+  );
+}
+
 /** GET /api/tasks */
 export function getAllTasks(): Promise<ApiTask[]> {
   return requestJson<ApiTask[]>("/api/tasks");
@@ -135,6 +144,8 @@ export function createTask(
     monthBucket?: string;
     windowStart?: string | null;
     windowEnd?: string | null;
+    /** When set for daily tasks, task only appears on this day. Omit/null = recurring every day. */
+    dailyForDate?: string | null;
   },
 ): Promise<ApiTask> {
   const task_kind = opts?.taskKind ?? "daily";
@@ -147,6 +158,9 @@ export function createTask(
     if (ws && we) {
       body.window_start = ws;
       body.window_end = we;
+    }
+    if (opts?.dailyForDate != null && opts.dailyForDate.length > 0) {
+      body.daily_for_date = opts.dailyForDate.slice(0, 10);
     }
   }
   return requestJson<ApiTask>("/api/tasks", {

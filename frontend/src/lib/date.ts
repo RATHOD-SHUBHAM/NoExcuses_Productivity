@@ -72,6 +72,59 @@ export function addDaysLocalISO(iso: string, deltaDays: number): string {
   return formatLocalISODate(d);
 }
 
+/** Last calendar day of the month for a month-bucket date (`YYYY-MM-01`). */
+export function monthBucketLastDayISO(monthBucketFirstDay: string): string {
+  const d = new Date(monthBucketFirstDay.slice(0, 10) + "T12:00:00");
+  if (Number.isNaN(d.getTime())) return monthBucketFirstDay.slice(0, 10);
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const last = new Date(y, m + 1, 0).getDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${y}-${pad(m + 1)}-${pad(last)}`;
+}
+
+/**
+ * Dates where a monthly goal counts (from max(created, month start) through
+ * min(today, month end)), as YYYY-MM-DD keys.
+ */
+export function monthlyApplicableDateKeys(
+  monthBucketFirstDay: string,
+  createdAtIso: string,
+  todayYmd: string,
+): Set<string> {
+  const start = monthBucketFirstDay.slice(0, 10);
+  const monthEnd = monthBucketLastDayISO(start);
+  const created = localDateKeyFromIso(createdAtIso);
+  const rangeStart = created > start ? created : start;
+  const rangeEnd = todayYmd < monthEnd ? todayYmd : monthEnd;
+  if (rangeStart > rangeEnd) return new Set();
+  const set = new Set<string>();
+  let d = rangeStart;
+  while (d <= rangeEnd) {
+    set.add(d);
+    d = addDaysLocalISO(d, 1);
+  }
+  return set;
+}
+
+/** Every calendar day from local created date through today (for daily missed counts). */
+export function dailyTrackedDateKeys(
+  createdAtIso: string,
+  todayYmd: string,
+): Set<string> {
+  const created = localDateKeyFromIso(createdAtIso);
+  const rangeStart = created;
+  const rangeEnd = todayYmd;
+  if (rangeStart > rangeEnd) return new Set();
+  const set = new Set<string>();
+  let d = rangeStart;
+  while (d <= rangeEnd) {
+    set.add(d);
+    d = addDaysLocalISO(d, 1);
+  }
+  return set;
+}
+
 export type RhythmChartWindow = { from: string; to: string; label: string };
 
 /**

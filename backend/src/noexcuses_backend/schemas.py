@@ -16,6 +16,8 @@ class TaskCreate(BaseModel):
     """Optional same-day window (24h HH:MM local) for daily habits only; omit or set both."""
     window_start: str | None = None
     window_end: str | None = None
+    """When set for daily tasks, the task only appears on this calendar day (browser-local). Null = recurring every day."""
+    daily_for_date: Date | None = None
 
 
 class TaskOut(BaseModel):
@@ -26,6 +28,7 @@ class TaskOut(BaseModel):
     month_bucket: Date | None = None
     window_start: str | None = None
     window_end: str | None = None
+    daily_for_date: Date | None = None
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> "TaskOut":
@@ -49,6 +52,15 @@ class TaskOut(BaseModel):
                 mb = mb_raw
         ws = row.get("window_start")
         we = row.get("window_end")
+        dfd_raw = row.get("daily_for_date")
+        dfd: Date | None = None
+        if dfd_raw is not None:
+            if isinstance(dfd_raw, str):
+                dfd = Date.fromisoformat(dfd_raw[:10])
+            elif isinstance(dfd_raw, datetime):
+                dfd = dfd_raw.date()
+            elif isinstance(dfd_raw, Date):
+                dfd = dfd_raw
         return cls(
             id=str(row["id"]),
             title=row["title"],
@@ -57,6 +69,7 @@ class TaskOut(BaseModel):
             month_bucket=mb,
             window_start=str(ws).strip() if isinstance(ws, str) and ws.strip() else None,
             window_end=str(we).strip() if isinstance(we, str) and we.strip() else None,
+            daily_for_date=dfd,
         )
 
 
@@ -86,6 +99,22 @@ class DailyCompletion(BaseModel):
     rest_marks: int = 0
     """Whole-day rest applies to every habit on this date."""
     global_rest: bool = False
+
+
+class DayCheckinBucketOut(BaseModel):
+    """Per-day checklist counts (per-task rest rows are not counted as expected)."""
+
+    expected: int
+    completed: int
+    incomplete: int
+    rested: int
+
+
+class DayCheckinSummaryOut(BaseModel):
+    date: Date
+    global_rest: bool
+    daily: DayCheckinBucketOut
+    monthly: DayCheckinBucketOut
 
 
 class CalendarDayTaskOut(BaseModel):

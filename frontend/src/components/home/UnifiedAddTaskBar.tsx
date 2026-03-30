@@ -10,7 +10,11 @@ import { SectionHeading } from "../ui/SectionHeading";
 type Props = {
   onAddDaily: (
     title: string,
-    opts?: { windowStart?: string | null; windowEnd?: string | null },
+    opts?: {
+      windowStart?: string | null;
+      windowEnd?: string | null;
+      recurringDaily?: boolean;
+    },
   ) => void | Promise<void>;
   onAddMonthly: (title: string) => void | Promise<void>;
   disabled?: boolean;
@@ -31,6 +35,7 @@ export function UnifiedAddTaskBar({
   const [value, setValue] = useState("");
   const [windowStart, setWindowStart] = useState("");
   const [windowEnd, setWindowEnd] = useState("");
+  const [recurringDaily, setRecurringDaily] = useState(false);
   const [timeError, setTimeError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
@@ -50,7 +55,10 @@ export function UnifiedAddTaskBar({
         setTimeError("End time must be after start (same day).");
         return;
       }
-      await onAddDaily(t, ws && we ? { windowStart: ws, windowEnd: we } : undefined);
+      await onAddDaily(t, {
+        ...(ws && we ? { windowStart: ws, windowEnd: we } : {}),
+        recurringDaily,
+      });
       setWindowStart("");
       setWindowEnd("");
     } else {
@@ -77,12 +85,13 @@ export function UnifiedAddTaskBar({
       >
         {compact ? (
           <>
-            Daily or monthly goal for{" "}
+            Today’s list (default) or repeat every day; monthly goals for{" "}
             <span className="text-zinc-400">{monthLabel}</span>.
           </>
         ) : (
           <>
-            Daily repeat (optional time window), or a goal for{" "}
+            Plan today’s todos (fresh each day), or turn on “every day” for a
+            recurring habit. Monthly goals for{" "}
             <span className="text-zinc-400">{monthLabel}</span>.
           </>
         )}
@@ -139,7 +148,7 @@ export function UnifiedAddTaskBar({
               onChange={(e) => setValue(e.target.value)}
               placeholder={
                 kind === "daily"
-                  ? "Something you’ll check off every day…"
+                  ? "Something to do today…"
                   : "e.g. Finish the course, gym 12×…"
               }
               autoComplete="off"
@@ -157,20 +166,37 @@ export function UnifiedAddTaskBar({
         </div>
 
         {kind === "daily" ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-            <span className="text-sm text-zinc-500 sm:w-40 sm:shrink-0">
-              Planned window (optional)
-            </span>
-            <PlannedTimeInputs
-              startId="unified-window-start"
-              endId="unified-window-end"
-              startValue={windowStart}
-              endValue={windowEnd}
-              onStartChange={setWindowStart}
-              onEndChange={setWindowEnd}
-              disabled={disabled}
-            />
-          </div>
+          <>
+            <label className="flex cursor-pointer items-center gap-2.5 text-sm text-zinc-400">
+              <input
+                type="checkbox"
+                checked={recurringDaily}
+                onChange={(e) => setRecurringDaily(e.target.checked)}
+                disabled={disabled}
+                className="size-4 rounded border-zinc-500 bg-zinc-950 text-emerald-500 focus:ring-2 focus:ring-emerald-500/35"
+              />
+              <span>
+                Repeat every day{" "}
+                <span className="text-zinc-600">
+                  (leave off for today’s plan only)
+                </span>
+              </span>
+            </label>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+              <span className="text-sm text-zinc-500 sm:w-40 sm:shrink-0">
+                Planned window (optional)
+              </span>
+              <PlannedTimeInputs
+                startId="unified-window-start"
+                endId="unified-window-end"
+                startValue={windowStart}
+                endValue={windowEnd}
+                onStartChange={setWindowStart}
+                onEndChange={setWindowEnd}
+                disabled={disabled}
+              />
+            </div>
+          </>
         ) : null}
 
         {timeError ? (
